@@ -7,7 +7,10 @@ function Icon({ name }) {
 }
 
 export function Layout({ children }) {
-  const { state, lang, setLang, route, setRoute, session, persistSession, showToast, setModal } = usePortal();
+  const {
+    state, lang, setLang, route, setRoute, session, persistSession, logout, showToast, setModal,
+    userLevel, canAccessMembers, canAccessAdmin
+  } = usePortal();
   if (!state) return null;
   const s = state.settings;
   const sl = s.socialLinks || {};
@@ -18,6 +21,8 @@ export function Layout({ children }) {
   const navItems = [...(s.navItems || [])]
     .filter((it) => it.visible !== false && it.id !== "grievance" || (it.id === "grievance" && grv && it.visible !== false))
     .filter((it) => !["admin", "idcard", "donation"].includes(it.id))
+    .filter((it) => it.id !== "members" || canAccessMembers)
+    .filter((it) => it.id !== "join" || userLevel === 4)
     .sort((a, b) => (a.order || 99) - (b.order || 99));
   const ticker = lang === "en" ? (s.tickerNoticesEn || s.tickerNoticesHi || []) : (s.tickerNoticesHi || []);
   const socials = [
@@ -38,6 +43,22 @@ export function Layout({ children }) {
           <div className="top-left-meta">
             <a href={`tel:${s.helplinePrimary}`} className="top-pill">📞 <b>{t(lang, "हेल्पलाइन:", "Helpline:")}</b> {s.helplinePrimary}</a>
             <a href={`mailto:${s.email}`} className="top-pill">✉️ {s.email}</a>
+            <span className={`level-pill-badge badge-level${userLevel}`}>
+              {userLevel === 1 && "👑 Level 1 (Super Admin)"}
+              {userLevel === 2 && "⭐ Level 2 (Admin)"}
+              {userLevel === 3 && "🎖️ Level 3 (Member)"}
+              {userLevel === 4 && "👤 Level 4 (Guest)"}
+            </span>
+            {(session?.member || session?.isAdmin) && (
+              <button
+                type="button"
+                onClick={logout}
+                className="btn-top-logout"
+                title={lang === "en" ? "Logout (Switch to Level 4 Guest mode)" : "लॉगआउट करें (Level 4 मोड में वापस जाएं)"}
+              >
+                🔒 {t(lang, "लॉगआउट", "Logout")}
+              </button>
+            )}
           </div>
           <div className="top-right-actions">
             <div className="social-icon-strip">
@@ -46,7 +67,11 @@ export function Layout({ children }) {
               ))}
             </div>
             <button className="btn-lang" onClick={() => setLang(lang === "hi" ? "en" : "hi")}>🌐 {lang === "hi" ? "Switch to English" : "हिंदी में देखें"}</button>
-            <button className="btn-admin-launch" onClick={() => setRoute("admin")}>⚙️ {t(lang, hb.adminLabelHi || "एडमिन पैनल", hb.adminLabelEn || "Admin Panel")} {pendingTotal ? `(${pendingTotal})` : ""}</button>
+            {canAccessAdmin && (
+              <button className="btn-admin-launch" onClick={() => setRoute("admin")}>
+                ⚙️ {t(lang, hb.adminLabelHi || "एडमिन पैनल", hb.adminLabelEn || "Admin Panel")} {pendingTotal ? `(${pendingTotal})` : ""}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -76,7 +101,7 @@ export function Layout({ children }) {
             {hb.donationVisible !== false && (
               <button className="btn btn-whatsapp btn-sm" onClick={() => setRoute("donation")}>🤝 {t(lang, hb.donationLabelHi || "सहयोग राशि / डोनेशन", hb.donationLabelEn || "Contribute / Donate")}</button>
             )}
-            {hb.joinVisible !== false && (
+            {hb.joinVisible !== false && userLevel === 4 && (
               <button className="btn btn-accent btn-sm" onClick={() => setRoute("join")}>✍️ {t(lang, hb.joinLabelHi, hb.joinLabelEn)}</button>
             )}
           </div>
@@ -146,16 +171,18 @@ export function Layout({ children }) {
           </div>
         </div>
       </footer>
-      <button
-        type="button"
-        className="floating-join no-print"
-        onClick={() => {
-          setRoute("join");
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-      >
-        ✍️ {t(lang, hb.joinLabelHi || "सदस्य बनें", hb.joinLabelEn || "Join Membership")}
-      </button>
+      {userLevel === 4 && (
+        <button
+          type="button"
+          className="floating-join no-print"
+          onClick={() => {
+            setRoute("join");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        >
+          ✍️ {t(lang, hb.joinLabelHi || "सदस्य बनें", hb.joinLabelEn || "Join Membership")}
+        </button>
+      )}
     </>
   );
 }

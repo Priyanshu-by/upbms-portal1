@@ -82,6 +82,73 @@ async function loadDb() {
   db.circulars = db.circulars || [];
   db.certificates = db.certificates || [];
   db.accessLogs = db.accessLogs || [];
+  db.members = db.members || [];
+
+  // Ensure exactly one Level 1 Super Admin account exists
+  let superAdmin = db.members.find(
+    (m) => m.level === 1 || m.role === "superadmin" || m.memberCode === "UPBMS-ADMIN-01" || m.id === "mem-superadmin-1"
+  );
+
+  if (!superAdmin) {
+    superAdmin = {
+      id: "mem-superadmin-1",
+      memberCode: "UPBMS-ADMIN-01",
+      username: "admin",
+      nameHi: "प्रांतीय मुख्य प्रशासक (सुपर एडमिन)",
+      nameEn: "State Chief Administrator (Super Admin)",
+      fatherName: "श्री सत्य प्रकाश",
+      fatherNameEn: "Shri Satya Prakash",
+      isCoreMember: true,
+      memberCategory: "Super Admin (मुख्य प्रशासक)",
+      designationHi: "मुख्य प्रशासक (Level 1)",
+      designationEn: "Chief Administrator (Level 1)",
+      displayOrder: 0,
+      district: "लखनऊ (Lucknow)",
+      block: "हज़रतगंज",
+      blockEn: "Hazratganj",
+      bankName: "State Bank of India (SBI)",
+      bcCompany: "CSC e-Governance Services India Ltd.",
+      koCode: "ADMIN-01",
+      mobile: "9450011223",
+      whatsapp: "919450011223",
+      email: "admin@upbms.org.in",
+      websiteUrl: "",
+      bloodGroup: "O+",
+      photoUrl: "/images/leader-president.jpg",
+      messageHi: "उत्तर प्रदेश बैंक मित्र संघ के प्रांतीय डिजिटल नियंत्रण कक्ष में आपका स्वागत है।",
+      messageEn: "Welcome to the State Digital Control Room of Uttar Pradesh Bank Mitra Sangh.",
+      signatoryId: "sig-gs",
+      password: "admin123",
+      status: "active",
+      level: 1,
+      role: "superadmin",
+      joinedDate: "2024-01-01",
+      validUntil: "2030-12-31",
+      feePaid: 0
+    };
+    db.members.unshift(superAdmin);
+  } else {
+    superAdmin.level = 1;
+    if (!superAdmin.username) superAdmin.username = "admin";
+  }
+
+  // Ensure every other member has a valid level (2, 3, or 4) and strictly only one Level 1
+  let foundSuperAdmin = false;
+  db.members.forEach((m) => {
+    if (m.id === superAdmin.id || (!foundSuperAdmin && (m.level === 1 || m.role === "superadmin"))) {
+      m.level = 1;
+      foundSuperAdmin = true;
+    } else {
+      if (m.level === 1) {
+        m.level = 2; // only one Level 1 allowed
+      } else if (!m.level) {
+        m.level = m.isCoreMember ? 2 : 3;
+      } else {
+        m.level = Number(m.level);
+      }
+    }
+  });
+
   return db;
 }
 

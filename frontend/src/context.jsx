@@ -74,10 +74,33 @@ export function PortalProvider({ children }) {
     }
   }, [session, signed, state]);
 
+  const userLevel = session?.level || (session?.isAdmin ? 1 : (session?.member?.level || (session?.member ? 3 : 4)));
+  const isAdmin = userLevel === 1 || userLevel === 2;
+  const isSuperAdmin = userLevel === 1;
+  const canAccessMembers = userLevel <= 3;
+  const canAccessAdmin = userLevel <= 2;
+  const canAccessUserManagement = userLevel === 1;
+
+  const logout = useCallback(async () => {
+    persistSession(null);
+    setModal(null);
+    setRoute("home");
+    try {
+      await refresh(null);
+    } catch {
+      /* silent */
+    }
+    showToast(lang === "en" ? "Logged out successfully (Returned to Level 4 Guest mode)" : "आप सफलतापूर्वक लॉगआउट हो चुके हैं (Level 4 मोड सक्रिय)");
+  }, [persistSession, setModal, setRoute, refresh, showToast, lang]);
+
   const value = useMemo(() => ({
-    state, setState, lang, setLang, route, setRoute, session, persistSession,
-    toast, showToast, modal, setModal, loading, error, refresh, signed, recordSignedUsage
-  }), [state, lang, route, session, toast, modal, loading, error, refresh, signed, recordSignedUsage, showToast, persistSession]);
+    state, setState, lang, setLang, route, setRoute, session, persistSession, logout,
+    toast, showToast, modal, setModal, loading, error, refresh, signed, recordSignedUsage,
+    userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
+  }), [
+    state, lang, route, session, toast, modal, loading, error, refresh, signed, recordSignedUsage,
+    showToast, persistSession, logout, userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
+  ]);
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
 }

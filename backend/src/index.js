@@ -48,7 +48,8 @@ function generateNextAuditCode() {
 function resolveRequestAuth(req) {
   const adminPinHdr = String(req.headers["x-admin-pin"] || "").trim();
   if (adminPinHdr && adminPinHdr === String(db.settings.adminPin || "1234")) {
-    return { isAdmin: true, isMember: false, canAccessSigned: true, actorType: "admin", member: null };
+    const superAdmin = (db.members || []).find((m) => m.level === 1) || null;
+    return { isAdmin: true, isMember: false, canAccessSigned: true, actorType: "admin", member: superAdmin, level: 1 };
   }
   const memIdHdr = String(req.headers["x-member-id"] || "").trim();
   let memPassHdr = "";
@@ -58,18 +59,26 @@ function resolveRequestAuth(req) {
     memPassHdr = String(req.headers["x-member-pass"] || "").trim();
   }
   if (memIdHdr && memPassHdr) {
-    const found = db.members.find((m) => m.id === memIdHdr);
+    const found = db.members.find(
+      (m) =>
+        m.id === memIdHdr ||
+        m.memberCode === memIdHdr ||
+        (m.username && m.username.toLowerCase() === memIdHdr.toLowerCase())
+    );
     if (found && String(found.password || "123456") === memPassHdr) {
+      const level = Number(found.level) || (found.isCoreMember ? 2 : 3);
+      const isAdmin = level === 1 || level === 2;
       return {
-        isAdmin: false,
+        isAdmin,
         isMember: true,
-        canAccessSigned: found.status === "active",
-        actorType: "member",
-        member: found
+        canAccessSigned: found.status === "active" || isAdmin,
+        actorType: isAdmin ? "admin" : "member",
+        member: found,
+        level
       };
     }
   }
-  return { isAdmin: false, isMember: false, canAccessSigned: false, actorType: "visitor", member: null };
+  return { isAdmin: false, isMember: false, canAccessSigned: false, actorType: "visitor", member: null, level: 4 };
 }
 
 function appendAccessLogEntry(req, entry) {
@@ -138,6 +147,7 @@ function escapeCsvCell(val) {
 function sanitizeMemberPublic(m) {
   const copy = { ...m };
   copy.hasPassword = Boolean(copy.password);
+  copy.level = Number(copy.level) || (copy.isCoreMember ? 2 : 3);
   delete copy.password;
   return copy;
 }
@@ -187,6 +197,12 @@ function buildBootstrap(auth) {
   }
   return {
     ok: true,
+    currentUser: {
+      level: auth.level,
+      isAdmin: auth.isAdmin,
+      isMember: auth.isMember,
+      actorType: auth.actorType
+    },
     signedAssetsUnlocked: auth.canAccessSigned,
     settings: publicSettings,
     slides: [...db.slides].sort((a, b) => (a.order || 99) - (b.order || 99)),
@@ -209,7 +225,16 @@ function buildBootstrap(auth) {
 
 function requireAdmin(req, res, next) {
   const auth = resolveRequestAuth(req);
-  if (!auth.isAdmin) return res.status(403).json({ ok: false, error: "Admin login required" });
+  if (!auth.isAdmin) return res.status(403).json({ ok: false, error: "Admin login required (Level 1 or 2)" });
+  req.auth = auth;
+  next();
+}
+
+function requireSuperAdmin(req, res, next) {
+  const auth = resolveRequestAuth(req);
+  if (!auth.isAdmin || auth.level !== 1) {
+    return res.status(403).json({ ok: false, error: "Super Admin (Level 1) access required for User Management" });
+  }
   req.auth = auth;
   next();
 }
@@ -241,17 +266,68 @@ app.get("/api/bootstrap", (req, res) => {
 
 app.post("/api/admin/login", (req, res) => {
   const pin = String(req.body.pin || "").trim();
-  if (pin === String(db.settings.adminPin || "1234")) {
-    return res.json({ ok: true, message: "Admin login successful" });
+  const query = String(req.body.query || req.body.username || "").trim().toLowerCase();
+  const password = String(req.body.password || "").trim();
+
+  // 1. PIN-based login (default: 1234 -> Level 1 Super Admin)
+  if (pin && pin === String(db.settings.adminPin || "1234")) {
+    const superAdmin = (db.members || []).find((m) => m.level === 1) || null;
+    return res.json({
+      ok: true,
+      message: "Admin login successful (Super Admin PIN)",
+      level: 1,
+      isAdmin: true,
+      adminPin: pin,
+      member: superAdmin ? sanitizeMemberPublic(superAdmin) : null
+    });
   }
-  return res.status(401).json({ ok: false, error: "गलत एडमिन पिन! डेमो पिन 1234 है। / Incorrect Admin PIN (Demo: 1234)" });
+
+  // 2. Credential-based login (Username/MemberCode/Mobile + Password)
+  if (query && password) {
+    const found = db.members.find(
+      (m) =>
+        String(m.memberCode || "").toLowerCase() === query ||
+        String(m.username || "").toLowerCase() === query ||
+        String(m.mobile || "").toLowerCase() === query
+    );
+    if (!found) {
+      return res.status(404).json({ ok: false, error: "प्रशासक खाता नहीं मिला। / Admin account not found." });
+    }
+    if (password !== String(found.password || "123456")) {
+      return res.status(401).json({ ok: false, error: "गलत पासवर्ड! / Incorrect password!" });
+    }
+    const userLevel = Number(found.level) || (found.isCoreMember ? 2 : 3);
+    if (userLevel !== 1 && userLevel !== 2) {
+      return res.status(403).json({
+        ok: false,
+        error: "यह खाता एडमिन पैनल के लिए अधिकृत नहीं है (केवल Level 1 और Level 2)। / This account is not authorized for Admin Panel (Level 1 & 2 only)."
+      });
+    }
+    return res.json({
+      ok: true,
+      message: `Admin login successful (${userLevel === 1 ? "Super Admin" : "Sub-Admin"})`,
+      level: userLevel,
+      isAdmin: true,
+      member: sanitizeMemberPublic(found),
+      memberId: found.id,
+      memberPass: found.password
+    });
+  }
+
+  return res.status(401).json({
+    ok: false,
+    error: "गलत एडमिन पिन या क्रेडेंशियल! (डेमो पिन: 1234 अथवा User: admin / Pass: admin123) / Incorrect Admin credentials."
+  });
 });
 
 app.post("/api/member/login", async (req, res) => {
   const q = String(req.body.query || "").trim().toLowerCase();
   const pwd = String(req.body.password || "").trim();
   const found = db.members.find(
-    (m) => String(m.memberCode || "").toLowerCase() === q || String(m.mobile || "").toLowerCase() === q
+    (m) =>
+      String(m.memberCode || "").toLowerCase() === q ||
+      String(m.username || "").toLowerCase() === q ||
+      String(m.mobile || "").toLowerCase() === q
   );
   if (!found) {
     return res.status(404).json({ ok: false, error: "सदस्य आईडी या मोबाइल नंबर नहीं मिला। / Member ID or Mobile not found." });
@@ -262,8 +338,9 @@ app.post("/api/member/login", async (req, res) => {
   const receipts = db.payments.filter(
     (p) => p.memberId === found.id || p.memberCode === found.memberCode || p.mobile === found.mobile
   );
+  const userLevel = Number(found.level) || (found.isCoreMember ? 2 : 3);
   appendAccessLogEntry(req, {
-    actorType: "member",
+    actorType: userLevel <= 2 ? "admin" : "member",
     memberId: found.id,
     memberCode: found.memberCode,
     memberNameHi: found.nameHi,
@@ -273,15 +350,21 @@ app.post("/api/member/login", async (req, res) => {
     mobile: found.mobile,
     district: found.district,
     actionType: "member_login",
-    actionLabelHi: "सदस्य पोर्टल लॉगिन किया (सुरक्षित सत्र प्रारंभ)",
-    actionLabelEn: "Logged into Member Portal (Secure Session Started)",
+    actionLabelHi: `पोर्टल लॉगिन किया (Level ${userLevel})`,
+    actionLabelEn: `Logged into Portal (Level ${userLevel})`,
     targetTitleHi: "सदस्य लॉगिन सत्यापन",
     targetTitleEn: "Member Login Authentication",
     signatoriesUsedHi: found.status === "active" ? "हस्ताक्षर/मुहर एक्सेस अनलॉक" : "लंबित सदस्यता (हस्ताक्षर लॉक)",
     signatoriesUsedEn: found.status === "active" ? "Signed Assets Access Unlocked" : "Pending Membership (Signatures Locked)"
   });
   await saveDb();
-  res.json({ ok: true, member: sanitizeMemberPublic(found), receipts });
+  res.json({
+    ok: true,
+    member: sanitizeMemberPublic(found),
+    level: userLevel,
+    isAdmin: userLevel === 1 || userLevel === 2,
+    receipts
+  });
 });
 
 app.post("/api/access-logs", async (req, res) => {
@@ -332,6 +415,86 @@ app.post("/api/members/:id/reset-password", requireAdmin, async (req, res) => {
   db.members[idx].password = newPassword;
   await saveDb();
   res.json({ ok: true });
+});
+
+// --- USER MANAGEMENT (LEVEL 1 SUPER ADMIN ONLY) ---
+app.get("/api/users", requireSuperAdmin, (_req, res) => {
+  const users = db.members.map((m) => ({
+    id: m.id,
+    memberCode: m.memberCode,
+    username: m.username || "",
+    nameHi: m.nameHi,
+    nameEn: m.nameEn,
+    mobile: m.mobile,
+    email: m.email || "",
+    district: m.district,
+    bankName: m.bankName,
+    designationHi: m.designationHi,
+    designationEn: m.designationEn,
+    isCoreMember: Boolean(m.isCoreMember),
+    status: m.status,
+    level: Number(m.level) || (m.isCoreMember ? 2 : 3),
+    joinedDate: m.joinedDate
+  }));
+  res.json({ ok: true, users });
+});
+
+app.put("/api/users/:id/level", requireSuperAdmin, async (req, res) => {
+  const idx = db.members.findIndex((m) => m.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "User not found" });
+
+  const target = db.members[idx];
+  const newLevel = Number(req.body.level);
+
+  if (![1, 2, 3, 4].includes(newLevel)) {
+    return res.status(400).json({ ok: false, error: "मान्य स्तर 1, 2, 3, या 4 होना चाहिए / Invalid level (Must be 1, 2, 3, or 4)" });
+  }
+
+  // Enforce rule: Exactly ONE account can be Level 1
+  if (newLevel === 1 && target.level !== 1) {
+    return res.status(400).json({
+      ok: false,
+      error: "केवल एक ही Level 1 (सुपर एडमिन) खाता हो सकता है। Level 1 खाता क्रेडेंशियल बदलने के लिए 'सुपर एडमिन क्रेडेंशियल' फ़ॉर्म का उपयोग करें। / Only one Level 1 account is permitted."
+    });
+  }
+
+  if (target.level === 1 && newLevel !== 1) {
+    return res.status(400).json({
+      ok: false,
+      error: "Level 1 सुपर एडमिन खाते का स्तर बदला नहीं जा सकता। / The single Level 1 Super Admin account cannot be downgraded directly."
+    });
+  }
+
+  db.members[idx].level = newLevel;
+  if (newLevel === 2) {
+    db.members[idx].status = "active";
+  } else if (newLevel === 3 && db.members[idx].status === "pending" && req.body.activateMember) {
+    db.members[idx].status = "active";
+  }
+
+  await saveDb();
+  res.json({ ok: true, user: sanitizeMemberPublic(db.members[idx]) });
+});
+
+app.put("/api/users/level1-credentials", requireSuperAdmin, async (req, res) => {
+  let superAdmin = db.members.find((m) => m.level === 1);
+  if (!superAdmin) {
+    return res.status(404).json({ ok: false, error: "Level 1 account not found" });
+  }
+  const body = req.body || {};
+  if (body.username) superAdmin.username = String(body.username).trim();
+  if (body.nameHi) superAdmin.nameHi = String(body.nameHi).trim();
+  if (body.nameEn) superAdmin.nameEn = String(body.nameEn).trim();
+  if (body.mobile) superAdmin.mobile = String(body.mobile).trim();
+  if (body.password) {
+    const pwd = String(body.password).trim();
+    if (pwd.length < 4) {
+      return res.status(400).json({ ok: false, error: "पासवर्ड कम से कम 4 अक्षरों का होना चाहिए / Minimum 4 characters password required" });
+    }
+    superAdmin.password = pwd;
+  }
+  await saveDb();
+  res.json({ ok: true, message: "Level 1 credentials updated successfully", user: sanitizeMemberPublic(superAdmin) });
 });
 
 app.put("/api/settings", requireAdmin, async (req, res) => {
@@ -456,6 +619,7 @@ app.post("/api/members", async (req, res) => {
       ? body.letterSignatoryIds
       : (db.settings.defaultSignatoryIds || [body.signatoryId || db.settings.defaultSignatoryId || "sig-gs"]),
     status,
+    level: body.level ? (Number(body.level) === 1 ? 2 : Number(body.level)) : (isCore ? 2 : 3),
     joinedDate: body.joinedDate || today,
     validUntil: body.validUntil || validDate.toISOString().slice(0, 10),
     feePaid: Number(body.feePaid) || 0
@@ -532,6 +696,9 @@ app.put("/api/members/:id", requireAdmin, async (req, res) => {
 app.delete("/api/members/:id", requireAdmin, async (req, res) => {
   const idx = db.members.findIndex((m) => m.id === req.params.id);
   if (idx === -1) return res.status(404).json({ ok: false, error: "Member not found" });
+  if (db.members[idx].level === 1) {
+    return res.status(400).json({ ok: false, error: "Level 1 सुपर एडमिन खाता हटाया नहीं जा सकता। / Level 1 Super Admin account cannot be deleted." });
+  }
   db.members.splice(idx, 1);
   await saveDb();
   res.json({ ok: true });

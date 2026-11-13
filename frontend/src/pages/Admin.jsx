@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, uploadFile } from "../api";
 import { usePortal } from "../context";
 import { t, localizeDual } from "../utils";
 
 const TABS = [
   ["dashboard", "📊 डैशबोर्ड", "📊 Dashboard"],
+  ["users", "👥 उपयोगकर्ता प्रबंधन", "👥 User Management"],
   ["signs", "✍️ हस्ताक्षर एवं मुहर", "✍️ Signature & Seal"],
   ["menus", "🧭 मेनू व सेक्शन", "🧭 Menus & Sections"],
   ["about", "🏛️ परिचय व प्रमाण-पत्र", "🏛️ About & Certificates"],
@@ -29,18 +30,29 @@ function today() {
 
 export function AdminPage() {
   const portal = usePortal();
-  const { state, session, persistSession, refresh, showToast, setRoute, lang } = portal;
+  const { state, session, persistSession, logout, refresh, showToast, setRoute, lang, isSuperAdmin, userLevel } = portal;
   const [tab, setTab] = useState("dashboard");
+  const [loginMode, setLoginMode] = useState("pin");
   const [pin, setPin] = useState("");
+  const [query, setQuery] = useState("");
+  const [password, setPassword] = useState("");
 
   async function login(e) {
     e.preventDefault();
     try {
-      await api("/api/admin/login", { method: "POST", body: { pin } });
-      const next = { adminPin: pin, isAdmin: true };
+      const payload = loginMode === "pin" ? { pin } : { query, password };
+      const data = await api("/api/admin/login", { method: "POST", body: payload });
+      const next = {
+        adminPin: data.adminPin || (loginMode === "pin" ? pin : ""),
+        memberId: data.memberId || data.member?.id,
+        memberPass: data.memberPass || password,
+        member: data.member,
+        level: data.level || (loginMode === "pin" ? 1 : 2),
+        isAdmin: true
+      };
       persistSession(next);
       await refresh(next);
-      showToast("एडमिन लॉगिन सफल");
+      showToast(t(lang, `एडमिन लॉगिन सफल (Level ${next.level})`, `Admin login successful (Level ${next.level})`));
     } catch (err) {
       showToast(err.message);
     }
@@ -49,13 +61,92 @@ export function AdminPage() {
   if (!session?.isAdmin) {
     return (
       <section className="section-block">
-        <div className="container" style={{ maxWidth: 480 }}>
-          <form className="card-panel" onSubmit={login}>
-            <h2 style={{ color: "var(--primary)" }}>सुपर एडमिन कंट्रोल पैनल</h2>
-            <p>डेमो पिन: 1234</p>
-            <input className="form-control" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Admin PIN" required />
-            <button className="btn btn-accent" style={{ marginTop: 12 }}>लॉगिन</button>
-          </form>
+        <div className="container" style={{ maxWidth: 500, margin: "30px auto" }}>
+          <div className="card-panel" style={{ padding: "32px 28px", borderRadius: 16, boxShadow: "0 10px 25px rgba(0,0,0,0.08)" }}>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+              <div style={{ fontSize: "2.8rem", marginBottom: 8 }}>⚙️</div>
+              <h2 style={{ color: "var(--primary)", fontSize: "1.5rem", fontWeight: 900, margin: 0 }}>
+                {t(lang, "प्रशासनिक नियंत्रण कक्ष", "Admin Control Panel")}
+              </h2>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginTop: 6 }}>
+                {t(lang, "केवल अधिकृत Level 1 एवं Level 2 प्रशासक खातों हेतु", "For authorized Level 1 & Level 2 administrators only")}
+              </p>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 18, background: "#f1f5f9", padding: 4, borderRadius: 8 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${loginMode === "pin" ? "btn-primary" : "btn-outline"}`}
+                style={{ fontWeight: 800, border: "none" }}
+                onClick={() => setLoginMode("pin")}
+              >
+                🔑 {t(lang, "एडमिन पिन", "Admin PIN")}
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${loginMode === "account" ? "btn-primary" : "btn-outline"}`}
+                style={{ fontWeight: 800, border: "none" }}
+                onClick={() => setLoginMode("account")}
+              >
+                👤 {t(lang, "खाता / पासवर्ड", "Account / Pass")}
+              </button>
+            </div>
+
+            <form onSubmit={login}>
+              {loginMode === "pin" ? (
+                <div>
+                  <label className="form-group">
+                    {t(lang, "एडमिन पिन दर्ज करें (Admin PIN)", "Enter Admin PIN")}
+                    <input
+                      className="form-control"
+                      type="password"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      placeholder="e.g. 1234"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  <div style={{ fontSize: "0.8rem", color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px 12px", borderRadius: 6, margin: "10px 0 16px" }}>
+                    💡 <b>{t(lang, "डेमो पिन:", "Demo PIN:")}</b> <code>1234</code> (Level 1 Super Admin)
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="form-group">
+                    {t(lang, "यूज़रनेम / सदस्य कोड / मोबाइल", "Username / Member ID / Mobile")}
+                    <input
+                      className="form-control"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="e.g. admin or UPBMS-CORE-002"
+                      required
+                      autoFocus
+                    />
+                  </label>
+                  <label className="form-group" style={{ marginTop: 10 }}>
+                    {t(lang, "पासवर्ड", "Password")}
+                    <input
+                      className="form-control"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="e.g. admin123 or 123456"
+                      required
+                    />
+                  </label>
+                  <div style={{ fontSize: "0.78rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px 12px", borderRadius: 6, margin: "10px 0 16px", lineHeight: 1.5 }}>
+                    <div>👑 <b>Level 1 (Super Admin):</b> <code>admin</code> / <code>admin123</code></div>
+                    <div>⭐ <b>Level 2 (Admin):</b> <code>UPBMS-CORE-002</code> / <code>123456</code></div>
+                  </div>
+                </div>
+              )}
+
+              <button className="btn btn-accent btn-lg" style={{ width: "100%", marginTop: 8 }}>
+                🚀 {t(lang, "एडमिन पैनल में प्रवेश करें", "Enter Admin Panel")}
+              </button>
+            </form>
+          </div>
         </div>
       </section>
     );
@@ -75,26 +166,41 @@ export function AdminPage() {
 
   const saveSettings = (patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg);
 
+  // Filter tabs: Level 2 admins cannot see or access User Management!
+  const visibleTabs = TABS.filter(([id]) => id !== "users" || isSuperAdmin);
+
   return (
     <div className="container" style={{ padding: "18px 0 40px" }}>
       <div className="admin-shell">
         <aside className="admin-sidebar no-print">
           <div style={{ padding: "8px 10px 14px" }}>
-            <div style={{ color: "#ffd166", fontWeight: 900, fontSize: "0.74rem" }}>MERN CMS</div>
+            <div style={{ color: "#ffd166", fontWeight: 900, fontSize: "0.74rem" }}>
+              {isSuperAdmin ? "👑 LEVEL 1 (SUPER ADMIN)" : "⭐ LEVEL 2 (ADMIN)"}
+            </div>
             <div style={{ fontWeight: 900 }}>{t(lang, "सुपर एडमिन कंट्रोल पैनल", "Super Admin Control Panel")}</div>
           </div>
-          {TABS.map(([id, labelHi, labelEn]) => (
+          {visibleTabs.map(([id, labelHi, labelEn]) => (
             <button key={id} className={`admin-menu-btn ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
               <span>{t(lang, labelHi, labelEn)}</span>
             </button>
           ))}
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
             <button className="btn btn-white btn-sm" onClick={() => setRoute("home")}>🌐 {t(lang, "वेबसाइट प्रीव्यू", "Website Preview")}</button>
-            <button className="btn btn-danger btn-sm" onClick={async () => { persistSession(null); await refresh(null); }}>🔒 {t(lang, "लॉगआउट", "Logout")}</button>
+            <button className="btn btn-danger btn-sm" onClick={logout}>🔒 {t(lang, "लॉगआउट (Level 4 मोड)", "Logout (Level 4)")}</button>
           </div>
         </aside>
         <section style={{ minWidth: 0 }}>
           {tab === "dashboard" && <Dashboard portal={portal} run={run} setTab={setTab} />}
+          {tab === "users" && (
+            isSuperAdmin ? (
+              <UsersManagement portal={portal} run={run} />
+            ) : (
+              <div className="card-panel">
+                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
+                <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है। Level 2 प्रशासक इसे एक्सेस नहीं कर सकते।", "User Management is strictly restricted to Level 1 Super Admin. Level 2 Admins cannot access this section.")}</p>
+              </div>
+            )
+          )}
           {(tab === "signs" || tab === "logs") && <Signs state={state} saveSettings={saveSettings} session={session} showToast={showToast} run={run} />}
           {tab === "menus" && <Menus state={state} saveSettings={saveSettings} />}
           {tab === "about" && <About state={state} saveSettings={saveSettings} run={run} session={session} showToast={showToast} />}
@@ -128,6 +234,383 @@ async function download(path, filename, session) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function UsersManagement({ portal, run }) {
+  const { state, session, showToast, lang, refresh } = portal;
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [updatingId, setUpdatingId] = useState(null);
+  const [editL1, setEditL1] = useState(false);
+  const [l1Form, setL1Form] = useState({
+    username: "",
+    password: "",
+    nameHi: "",
+    nameEn: "",
+    mobile: ""
+  });
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      const res = await api("/api/users", { session });
+      if (res.ok && res.users) {
+        setUsers(res.users);
+        const l1 = res.users.find((u) => u.level === 1);
+        if (l1) {
+          setL1Form({
+            username: l1.username || "admin",
+            password: "",
+            nameHi: l1.nameHi || "",
+            nameEn: l1.nameEn || "",
+            mobile: l1.mobile || ""
+          });
+        }
+      }
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const changeLevel = async (userId, newLevel) => {
+    try {
+      setUpdatingId(userId);
+      await api(`/api/users/${userId}/level`, {
+        method: "PUT",
+        session,
+        body: { level: Number(newLevel), activateMember: true }
+      });
+      showToast(t(lang, `उपयोगकर्ता स्तर सफलतापूर्वक Level ${newLevel} में बदला गया`, `User level updated to Level ${newLevel}`));
+      await loadUsers();
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleL1Submit = async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/users/level1-credentials", {
+        method: "PUT",
+        session,
+        body: l1Form
+      });
+      showToast(t(lang, "लेवल 1 सुपर एडमिन क्रेडेंशियल सफलतापूर्वक अपडेट किए गए", "Level 1 Super Admin credentials updated"));
+      setEditL1(false);
+      await loadUsers();
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    }
+  };
+
+  const superAdminUser = users.find((u) => u.level === 1) || (state.members || []).find((m) => m.level === 1);
+  const levelCounts = {
+    1: users.filter((u) => u.level === 1).length,
+    2: users.filter((u) => u.level === 2).length,
+    3: users.filter((u) => u.level === 3).length,
+    4: users.filter((u) => u.level === 4).length
+  };
+
+  const filteredUsers = users.filter((u) => {
+    if (levelFilter !== "all" && String(u.level) !== String(levelFilter)) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const combined = `${u.nameHi} ${u.nameEn} ${u.memberCode} ${u.username} ${u.mobile} ${u.district} ${u.designationHi}`.toLowerCase();
+      if (!combined.includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      {/* 1. Header Banner */}
+      <div className="card-panel" style={{ borderLeft: "5px solid #eab308", background: "linear-gradient(135deg, #0b1a30 0%, #162a45 100%)", color: "#fff" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ color: "#ffd166", fontWeight: 800, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
+              👑 ACCESS CONTROL & ROLES (LEVEL 1 EXCLUSIVE)
+            </div>
+            <h2 style={{ margin: "0 0 6px", fontSize: "1.5rem", fontWeight: 900, color: "#fff" }}>
+              {t(lang, "👥 उपयोगकर्ता एवं अनुमति स्तर प्रबंधन", "👥 User Access Levels & Permissions")}
+            </h2>
+            <p style={{ margin: 0, color: "#cbd5e1", fontSize: "0.92rem", lineHeight: 1.5, maxWidth: 750 }}>
+              {t(
+                lang,
+                "यहाँ से आप प्रत्येक पंजीकृत उपयोगकर्ता के अधिकार स्तर (Level 1, 2, 3, 4) देख और अपग्रेड कर सकते हैं। केवल Level 1 सुपर एडमिन को उपयोगकर्ता स्तर बदलने का पूर्ण अधिकार है।",
+                "View and manage access levels (Levels 1, 2, 3, 4) for all users. Only Level 1 Super Admin has authority to upgrade or modify user access levels."
+              )}
+            </p>
+          </div>
+          <button className="btn btn-white btn-sm" onClick={loadUsers} disabled={loading} style={{ alignSelf: "center" }}>
+            🔄 {t(lang, "रीफ्रेश करें", "Refresh Users")}
+          </button>
+        </div>
+      </div>
+
+      {/* 2. 4 Levels Summary Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
+        {/* Level 1 Card */}
+        <div className="card-panel" style={{ borderTop: "4px solid #f59e0b", padding: "16px 18px", background: "#fffdf5" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span className="badge badge-level1">👑 LEVEL 1</span>
+            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#b45309" }}>{levelCounts[1]} {t(lang, "खाता", "Account")}</span>
+          </div>
+          <div style={{ fontWeight: 800, color: "#92400e", fontSize: "0.95rem" }}>
+            {t(lang, "सुपर एडमिन (केवल 1 खाता)", "Super Admin (Only 1 Account)")}
+          </div>
+          <p style={{ fontSize: "0.82rem", color: "#78350f", margin: "6px 0 0", lineHeight: 1.4 }}>
+            {t(lang, "सर्वोच्च अधिकार: संपूर्ण वेबसाइट, सभी एडमिन पैनल संपादन तथा उपयोगकर्ता प्रबंधन।", "Supreme Access: All website features, all admin tabs, and User Management.")}
+          </p>
+        </div>
+
+        {/* Level 2 Card */}
+        <div className="card-panel" style={{ borderTop: "4px solid #2563eb", padding: "16px 18px", background: "#f8faff" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span className="badge badge-level2">⭐ LEVEL 2</span>
+            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1d4ed8" }}>{levelCounts[2]}</span>
+          </div>
+          <div style={{ fontWeight: 800, color: "#1e40af", fontSize: "0.95rem" }}>
+            {t(lang, "प्रशासक / सब-एडमिन", "Admin / Sub-Admin")}
+          </div>
+          <p style={{ fontSize: "0.82rem", color: "#1e3a8a", margin: "6px 0 0", lineHeight: 1.4 }}>
+            {t(lang, "वेबसाइट, सदस्य सूची व एडमिन पैनल। (User Management छोड़कर सभी संपादन अधिकार)।", "Website, Members & Admin Panel (All edit rights EXCEPT User Management).")}
+          </p>
+        </div>
+
+        {/* Level 3 Card */}
+        <div className="card-panel" style={{ borderTop: "4px solid #10b981", padding: "16px 18px", background: "#f6fef9" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span className="badge badge-level3">🎖️ LEVEL 3</span>
+            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#047857" }}>{levelCounts[3]}</span>
+          </div>
+          <div style={{ fontWeight: 800, color: "#065f46", fontSize: "0.95rem" }}>
+            {t(lang, "सत्यापित सदस्य", "Verified Member")}
+          </div>
+          <p style={{ fontSize: "0.82rem", color: "#064e3b", margin: "6px 0 0", lineHeight: 1.4 }}>
+            {t(lang, "सार्वजनिक वेबसाइट + सदस्य सूची (Members Page) + डिजिटल पहचान पत्र एवं नियुक्ति पत्र।", "Full website + Members Directory + Digital ID Card & Appointment Letter.")}
+          </p>
+        </div>
+
+        {/* Level 4 Card */}
+        <div className="card-panel" style={{ borderTop: "4px solid #64748b", padding: "16px 18px", background: "#f8fafc" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span className="badge badge-level4">👤 LEVEL 4</span>
+            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#475569" }}>{levelCounts[4]}</span>
+          </div>
+          <div style={{ fontWeight: 800, color: "#334155", fontSize: "0.95rem" }}>
+            {t(lang, "सामान्य आगंतुक / गेस्ट", "Guest / Visitor")}
+          </div>
+          <p style={{ fontSize: "0.82rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.4 }}>
+            {t(lang, "केवल सार्वजनिक वेबसाइट। सदस्य सूची व एडमिन पूर्ण वर्जित। सदस्यता लेकर Level 3 बन सकते हैं।", "Public website only. No Members page, No Admin. Can join to become Level 3.")}
+          </p>
+        </div>
+      </div>
+
+      {/* 3. Level 1 Account Details Card */}
+      <div className="card-panel" style={{ border: "1.5px solid #fde68a", background: "#fffbeb" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="badge badge-level1" style={{ fontSize: "0.85rem", padding: "3px 10px" }}>👑 LEVEL 1 SUPER ADMIN</span>
+              <span style={{ color: "#b45309", fontWeight: 800, fontSize: "0.88rem" }}>
+                ({t(lang, "नियम: संपूर्ण प्रणाली में केवल 1 खाता मान्य", "Rule: Exactly One Account Permitted")})
+              </span>
+            </div>
+            <h3 style={{ margin: "6px 0 0", color: "#78350f", fontSize: "1.2rem", fontWeight: 900 }}>
+              {superAdminUser ? t(lang, superAdminUser.nameHi, superAdminUser.nameEn) : "Super Admin"}
+            </h3>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ background: editL1 ? "#e2e8f0" : "#d97706", color: editL1 ? "#0f172a" : "#fff", fontWeight: 800, border: "none" }}
+            onClick={() => setEditL1(!editL1)}
+          >
+            {editL1 ? t(lang, "✕ बंद करें", "✕ Close") : t(lang, "✏️ क्रेडेंशियल व पासवर्ड बदलें", "✏️ Change Credentials & Password")}
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, fontSize: "0.9rem", color: "#92400e" }}>
+          <div><b>{t(lang, "यूज़रनेम (Username):", "Username:")}</b> <code>{superAdminUser?.username || "admin"}</code></div>
+          <div><b>{t(lang, "सदस्य कोड (Member Code):", "Member Code:")}</b> <code>{superAdminUser?.memberCode || "UPBMS-ADMIN-01"}</code></div>
+          <div><b>{t(lang, "मोबाइल नंबर (Mobile):", "Mobile:")}</b> {superAdminUser?.mobile || "9450011223"}</div>
+          <div><b>{t(lang, "स्थिति (Status):", "Status:")}</b> <span className="badge badge-verified">{t(lang, "सक्रिय (Active)", "Active")}</span></div>
+        </div>
+
+        {editL1 && (
+          <form onSubmit={handleL1Submit} style={{ marginTop: 18, paddingTop: 16, borderTop: "1px dashed #fcd34d", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            <label className="form-group">
+              {t(lang, "सुपर एडमिन यूज़रनेम (Username)", "Username")}
+              <input className="form-control" value={l1Form.username} onChange={(e) => setL1Form({ ...l1Form, username: e.target.value })} required />
+            </label>
+            <label className="form-group">
+              {t(lang, "नाम (हिंदी में)", "Name (Hindi)")}
+              <input className="form-control" value={l1Form.nameHi} onChange={(e) => setL1Form({ ...l1Form, nameHi: e.target.value })} required />
+            </label>
+            <label className="form-group">
+              {t(lang, "नाम (अंग्रेज़ी में)", "Name (English)")}
+              <input className="form-control" value={l1Form.nameEn} onChange={(e) => setL1Form({ ...l1Form, nameEn: e.target.value })} />
+            </label>
+            <label className="form-group">
+              {t(lang, "मोबाइल नंबर", "Mobile Number")}
+              <input className="form-control" value={l1Form.mobile} onChange={(e) => setL1Form({ ...l1Form, mobile: e.target.value })} required />
+            </label>
+            <label className="form-group">
+              {t(lang, "नया पासवर्ड (New Password)", "New Password")}
+              <input className="form-control" type="password" value={l1Form.password} onChange={(e) => setL1Form({ ...l1Form, password: e.target.value })} placeholder={t(lang, "नया पासवर्ड लिखें (न्यूनतम 4 अक्षर)", "Leave blank to keep current")} />
+            </label>
+            <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <button className="btn btn-accent" style={{ height: 42, width: "100%" }}>
+                💾 {t(lang, "क्रेडेंशियल सहेजें", "Save Credentials")}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* 4. Users Table & Level Upgrade Controls */}
+      <div className="card-panel">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14, marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "var(--primary)" }}>
+            📋 {t(lang, "समस्त पंजीकृत उपयोगकर्ता एवं स्तर अपग्रेड", "All Users & Level Upgrade")} ({filteredUsers.length})
+          </h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-muted)" }}>{t(lang, "फ़िल्टर:", "Filter:")}</span>
+            {["all", "1", "2", "3", "4"].map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                className={`btn btn-sm ${levelFilter === lvl ? "btn-primary" : "btn-outline"}`}
+                style={{ padding: "4px 10px", fontSize: "0.8rem", fontWeight: 800 }}
+                onClick={() => setLevelFilter(lvl)}
+              >
+                {lvl === "all" ? t(lang, "सभी (All)", "All") : `Level ${lvl}`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <input
+            className="form-control"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t(lang, "नाम, यूज़रनेम, सदस्य आईडी, मोबाइल या जनपद खोजें...", "Search by name, username, member ID, mobile or district...")}
+          />
+        </div>
+
+        {loading ? (
+          <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{t(lang, "उपयोगकर्ता लोड हो रहे हैं...", "Loading users...")}</div>
+        ) : filteredUsers.length === 0 ? (
+          <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{t(lang, "कोई उपयोगकर्ता नहीं मिला।", "No users found matching criteria.")}</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>{t(lang, "यूज़र / सदस्य कोड", "User / Member Code")}</th>
+                  <th>{t(lang, "नाम एवं पद", "Name & Designation")}</th>
+                  <th>{t(lang, "मोबाइल व जनपद", "Mobile & District")}</th>
+                  <th>{t(lang, "वर्तमान स्तर", "Current Level")}</th>
+                  <th style={{ minWidth: 190 }}>{t(lang, "स्तर अपग्रेड / परिवर्तन", "Upgrade / Change Level")}</th>
+                  <th>{t(lang, "स्थिति", "Status")}</th>
+                  <th>{t(lang, "कार्रवाई", "Action")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((u) => {
+                  const isL1 = u.level === 1;
+                  return (
+                    <tr key={u.id} style={{ background: isL1 ? "#fffbeb" : undefined }}>
+                      <td>
+                        <div style={{ fontWeight: 800 }}>{u.memberCode}</div>
+                        {u.username && <div style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>@{u.username}</div>}
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{t(lang, u.nameHi, u.nameEn)}</div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{t(lang, u.designationHi, u.designationEn)}</div>
+                      </td>
+                      <td>
+                        <div>{u.mobile}</div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{u.district}</div>
+                      </td>
+                      <td>
+                        <span className={`badge badge-level${u.level}`}>
+                          {u.level === 1 && "👑 Level 1"}
+                          {u.level === 2 && "⭐ Level 2"}
+                          {u.level === 3 && "🎖️ Level 3"}
+                          {u.level === 4 && "👤 Level 4"}
+                        </span>
+                      </td>
+                      <td>
+                        {isL1 ? (
+                          <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#b45309" }}>
+                            🔒 {t(lang, "स्थायी सुपर एडमिन (1 खाता केवल)", "Fixed Super Admin (1 Only)")}
+                          </span>
+                        ) : (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <select
+                              className="form-control form-control-sm"
+                              value={u.level}
+                              disabled={updatingId === u.id}
+                              onChange={(e) => changeLevel(u.id, e.target.value)}
+                              style={{ fontWeight: 800, fontSize: "0.82rem", padding: "4px 8px", width: "auto" }}
+                            >
+                              <option value={2}>⭐ Level 2 (Admin)</option>
+                              <option value={3}>🎖️ Level 3 (Member)</option>
+                              <option value={4}>👤 Level 4 (Guest)</option>
+                            </select>
+                            {updatingId === u.id && <span style={{ fontSize: "0.75rem", color: "var(--accent)" }}>⏳</span>}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge badge-${u.status === "active" ? "verified" : "pending"}`}>
+                          {u.status === "active" ? t(lang, "सक्रिय", "Active") : t(lang, "लंबित", "Pending")}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ fontSize: "0.78rem", padding: "4px 8px" }}
+                          onClick={async () => {
+                            const newPwd = prompt(t(lang, `${u.nameHi} का नया पासवर्ड दर्ज करें (न्यूनतम 4 अक्षर):`, `Enter new password for ${u.nameEn} (min 4 chars):`), "123456");
+                            if (newPwd && newPwd.trim().length >= 4) {
+                              try {
+                                await api(`/api/members/${u.id}/reset-password`, { method: "POST", session, body: { newPassword: newPwd.trim() } });
+                                showToast(t(lang, "पासवर्ड रीसेट सफल!", "Password reset successfully!"));
+                              } catch (err) {
+                                showToast(err.message);
+                              }
+                            }
+                          }}
+                        >
+                          🔑 {t(lang, "पासवर्ड", "Password")}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Dashboard({ portal, run, setTab }) {

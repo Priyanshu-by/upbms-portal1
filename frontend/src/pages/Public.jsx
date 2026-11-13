@@ -18,7 +18,7 @@ function SectionHead({ eyebrow, title, sub, action }) {
 }
 
 export function HomePage() {
-  const { state, lang, setRoute } = usePortal();
+  const { state, lang, setRoute, userLevel } = usePortal();
   const s = state.settings;
   const cb = s.campaignBlock || {};
   const stx = s.sectionTexts || {};
@@ -40,7 +40,11 @@ export function HomePage() {
                 <p className="campaign-sub">{t(lang, cb.subtitleHi, cb.subtitleEn)}</p>
               </div>
               <div className="campaign-cta-stack">
-                <button className="btn btn-accent btn-lg" onClick={() => go(cb.btn1Route || "join")}>✍️ {t(lang, cb.btn1Hi, cb.btn1En)}</button>
+                {userLevel === 4 ? (
+                  <button className="btn btn-accent btn-lg" onClick={() => go(cb.btn1Route || "join")}>✍️ {t(lang, cb.btn1Hi, cb.btn1En)}</button>
+                ) : (
+                  <button className="btn btn-accent btn-lg" onClick={() => setRoute("idcard")}>🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र", "View ID Card & Letter")}</button>
+                )}
                 <button className="btn btn-white btn-lg" onClick={() => setRoute("about")}>📋 {t(lang, cb.btn2Hi, cb.btn2En)}</button>
                 <button className="btn btn-whatsapp btn-lg" onClick={() => setRoute(cb.btn3Route === "grievance" && !grv ? "about" : (cb.btn3Route || "grievance"))}>⚖️ {t(lang, cb.btn3Hi, cb.btn3En)}</button>
               </div>
@@ -211,10 +215,43 @@ export function AboutPage() {
 }
 
 export function MembersPage() {
-  const { state, lang } = usePortal();
+  const { state, lang, userLevel, canAccessMembers, setRoute, setModal } = usePortal();
   const [q, setQ] = useState("");
   const [district, setDistrict] = useState("");
   const [bank, setBank] = useState("");
+
+  if (!canAccessMembers) {
+    return (
+      <section className="section-block">
+        <div className="container" style={{ maxWidth: 680, textAlign: "center", margin: "40px auto" }}>
+          <div className="card-panel" style={{ padding: "48px 24px", borderTop: "6px solid var(--accent)", borderRadius: 16 }}>
+            <div style={{ fontSize: "3.5rem", marginBottom: 16 }}>🔒</div>
+            <span className="badge badge-level4" style={{ fontSize: "0.85rem", padding: "4px 12px", marginBottom: 12, display: "inline-block" }}>
+              👤 {t(lang, "वर्तमान स्तर: Level 4 (सामान्य आगंतुक)", "Current Level: Level 4 (Guest Visitor)")}
+            </span>
+            <h2 style={{ color: "var(--primary)", fontSize: "1.75rem", fontWeight: 900, marginTop: 8 }}>
+              {t(lang, "सदस्य सूची (केवल Level 3+ सदस्यों हेतु आरक्षित)", "Members Directory (Reserved for Level 3+ Members)")}
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "1.05rem", lineHeight: 1.6, margin: "16px 0 28px" }}>
+              {t(
+                lang,
+                "आप वर्तमान में Level 4 पर हैं। सुरक्षा एवं गोपनीयता नियमों के अनुसार संपूर्ण सदस्य सूची केवल पंजीकृत एवं सत्यापित बैंक मित्र सदस्यों (Level 3+) के लिए उपलब्ध है। सदस्य सूची देखने हेतु कृपया सदस्यता पंजीकरण करें (Level 3 बनें) अथवा अपने खाते में लॉगिन करें।",
+                "You are currently at Level 4. Per association privacy and security guidelines, the full member directory is accessible only to verified members (Level 3+). Please register for membership to become Level 3, or log in to your existing account."
+              )}
+            </p>
+            <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-accent btn-lg" onClick={() => { setRoute("join"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                ✍️ {t(lang, "सदस्यता पंजीकरण करें (Level 3 बनें)", "Join Membership (Become Level 3)")}
+              </button>
+              <button className="btn btn-outline btn-lg" onClick={() => setModal({ kind: "login" })}>
+                🔑 {t(lang, "सदस्य लॉगिन करें", "Member Login")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const handleReset = () => {
     setQ("");
@@ -359,7 +396,43 @@ export function PortalsPage() {
 }
 
 export function JoinPage() {
-  const { state, lang, showToast, refresh, session, persistSession, setRoute } = usePortal();
+  const { state, lang, showToast, refresh, session, persistSession, setRoute, userLevel } = usePortal();
+
+  if (userLevel !== 4) {
+    return (
+      <section className="section-block">
+        <div className="container" style={{ maxWidth: 650, margin: "40px auto", textAlign: "center" }}>
+          <div className="card-panel" style={{ padding: "40px 24px", borderTop: "5px solid var(--success)", borderRadius: 16 }}>
+            <div style={{ fontSize: "3rem", marginBottom: 12 }}>✅</div>
+            <span className={`badge badge-level${userLevel}`} style={{ fontSize: "0.85rem", padding: "4px 12px", marginBottom: 12, display: "inline-block" }}>
+              {userLevel === 1 && "👑 Level 1 (Super Admin)"}
+              {userLevel === 2 && "⭐ Level 2 (Admin)"}
+              {userLevel === 3 && "🎖️ Level 3 (Member)"}
+            </span>
+            <h2 style={{ color: "var(--primary)", fontSize: "1.6rem", fontWeight: 900, marginTop: 8 }}>
+              {t(lang, "आप पहले से ही पंजीकृत सदस्य हैं", "You Are Already a Registered Member")}
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "1rem", lineHeight: 1.6, margin: "14px 0 24px" }}>
+              {t(
+                lang,
+                "आपका सदस्यता खाता पहले से सक्रिय है। नए सदस्यता पंजीकरण की आवश्यकता केवल Level 4 (सामान्य आगंतुकों) के लिए है। आप अपना आधिकारिक पहचान पत्र एवं नियुक्ति पत्र देख सकते हैं।",
+                "Your account is already active. New membership registration is required only for Level 4 guests. You can view your digital ID card and appointment letter below."
+              )}
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-lg" onClick={() => setRoute("idcard")}>
+                🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र देखें", "View ID Card & Letter")}
+              </button>
+              <button className="btn btn-outline btn-lg" onClick={() => setRoute("home")}>
+                🏠 {t(lang, "मुख्य पृष्ठ पर जाएं", "Go to Home")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   const s = state.settings;
   const tc = s.termsAndConditions || {};
   const fee = s.membershipFeeGeneral || 251;
@@ -1206,7 +1279,7 @@ function Field({ label, error, ...props }) {
 }
 
 export function Modals() {
-  const { modal, setModal, lang, state, session, persistSession, refresh, showToast, recordSignedUsage } = usePortal();
+  const { modal, setModal, lang, state, session, persistSession, logout, refresh, showToast, recordSignedUsage } = usePortal();
   useEffect(() => {
     if (modal) {
       document.body.classList.add("modal-open");
@@ -1220,11 +1293,17 @@ export function Modals() {
     const raw = Object.fromEntries(new FormData(e.target).entries());
     try {
       const data = await api("/api/member/login", { method: "POST", body: raw });
-      const next = { memberId: data.member.id, memberPass: raw.password, member: data.member, isAdmin: false };
+      const next = {
+        memberId: data.member.id,
+        memberPass: raw.password,
+        member: data.member,
+        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
+        isAdmin: Boolean(data.isAdmin)
+      };
       persistSession(next);
       await refresh(next);
       setModal(null);
-      showToast(t(lang, "लॉगिन सफल", "Login successful"));
+      showToast(t(lang, `लॉगिन सफल (Level ${next.level})`, `Login successful (Level ${next.level})`));
     } catch (err) { showToast(err.message); }
   }
   let body = null;
@@ -1237,23 +1316,70 @@ export function Modals() {
     : modal.kind === "receipt"
     ? `🧾 ${t(lang, "शुल्क रसीद", "Payment Receipt")}`
     : modal.kind === "login"
-    ? `🔐 ${t(lang, "सदस्य लॉगिन", "Member Login")}`
+    ? `🔐 ${t(lang, "पोर्टल लॉगिन (User Login)", "Portal Login")}`
     : modal.kind === "memberMenu"
-    ? `👤 ${t(lang, "सदस्य प्रोफ़ाइल", "Member Profile")}`
+    ? `👤 ${t(lang, "सदस्य प्रोफ़ाइल एवं स्तर", "Member Profile & Access Level")}`
     : "UPBMS";
 
   if (modal.kind === "login" || modal.kind === "memberMenu") {
+    const userLvl = session?.level || (session?.isAdmin ? 1 : (session?.member?.level || 3));
     body = modal.kind === "memberMenu" ? (
-      <div>
-        <p>{t(lang, session.member.nameHi, session.member.nameEn)} • {session.member.memberCode}</p>
-        <button className="btn btn-danger" onClick={async () => { persistSession(null); await refresh(null); setModal(null); }}>{t(lang, "लॉगआउट", "Logout")}</button>
+      <div style={{ padding: "16px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#ffd166", display: "grid", placeItems: "center", fontSize: "1.3rem", fontWeight: 900 }}>
+            {session.member?.nameHi?.charAt(0) || "👤"}
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: "1.1rem" }}>{t(lang, session.member?.nameHi, session.member?.nameEn)}</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{session.member?.memberCode || session.member?.username}</div>
+          </div>
+        </div>
+        <div style={{ marginBottom: 16, background: "#f8fafc", padding: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{t(lang, "वर्तमान अधिकार स्तर:", "Access Level:")}</span>
+            <span className={`badge badge-level${userLvl}`}>
+              {userLvl === 1 && "👑 Level 1 (Super Admin)"}
+              {userLvl === 2 && "⭐ Level 2 (Admin)"}
+              {userLvl === 3 && "🎖️ Level 3 (Member)"}
+              {userLvl === 4 && "👤 Level 4 (Guest)"}
+            </span>
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+            {userLvl === 1 && t(lang, "पूर्ण अधिकार: सभी संपादन + उपयोगकर्ता प्रबंधन (केवल 1 खाता)।", "All Access: All editing privileges + User Management.")}
+            {userLvl === 2 && t(lang, "प्रशासक: वेबसाइट + सदस्य सूची + एडमिन पैनल (User Management को छोड़कर)।", "Admin: Website + Members + Admin Panel (except User Management).")}
+            {userLvl === 3 && t(lang, "सत्यापित सदस्य: संपूर्ण वेबसाइट + सदस्य सूची + डिजिटल पहचान पत्र।", "Verified Member: Website + Members Directory + Digital ID.")}
+            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट। सदस्य सूची हेतु सदस्यता लें।", "Visitor: Public website. Join to view Members Directory.")}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button className="btn btn-danger btn-sm" onClick={logout}>
+            🔒 {t(lang, "लॉगआउट करें (Level 4 मोड)", "Logout (Switch to Level 4)")}
+          </button>
+        </div>
       </div>
     ) : (
-      <form onSubmit={login}>
-        <p>{t(lang, "डेमो: UPBMS-CORE-001 / 123456", "Demo: UPBMS-CORE-001 / 123456")}</p>
-        <input className="form-control" name="query" defaultValue={modal.prefill || ""} placeholder={t(lang, "सदस्य आईडी या मोबाइल", "Member ID or mobile")} required />
-        <input className="form-control" name="password" type="password" placeholder={t(lang, "पासवर्ड", "Password")} required style={{ marginTop: 8 }} />
-        <button className="btn btn-primary" style={{ marginTop: 10 }}>{t(lang, "लॉगिन", "Login")}</button>
+      <form onSubmit={login} style={{ padding: "16px 20px" }}>
+        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: 8, marginBottom: 14 }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#166534", marginBottom: 4 }}>
+            💡 {t(lang, "परीक्षण हेतु डेमो खाते (Demo Accounts):", "Demo Accounts for Testing:")}
+          </div>
+          <div style={{ fontSize: "0.78rem", color: "#15803d", lineHeight: 1.5 }}>
+            <div>👑 <b>Level 1 (Super Admin):</b> <code>admin</code> / <code>admin123</code></div>
+            <div>⭐ <b>Level 2 (Admin):</b> <code>UPBMS-CORE-002</code> / <code>123456</code></div>
+            <div>🎖️ <b>Level 3 (Member):</b> <code>UPBMS-CORE-001</code> / <code>123456</code></div>
+          </div>
+        </div>
+        <label className="form-group">
+          {t(lang, "सदस्य आईडी / यूज़रनेम / मोबाइल नंबर", "Member ID / Username / Mobile")}
+          <input className="form-control" name="query" defaultValue={modal.prefill || ""} placeholder="e.g. admin or UPBMS-CORE-001" required />
+        </label>
+        <label className="form-group" style={{ marginTop: 8 }}>
+          {t(lang, "पासवर्ड", "Password")}
+          <input className="form-control" name="password" type="password" placeholder="e.g. admin123 or 123456" required />
+        </label>
+        <button className="btn btn-primary" style={{ width: "100%", marginTop: 14 }}>
+          🔑 {t(lang, "लॉगिन करें", "Sign In")}
+        </button>
       </form>
     );
   } else if (modal.kind === "file" && !modal.locked) {
