@@ -118,7 +118,7 @@ export function Layout({ children }) {
         </nav>
       </header>
 
-      {ticker.length > 0 && (
+      {stx.tickerVisible !== false && ticker.length > 0 && (
         <div className="ticker-bar no-print">
           <div className="container ticker-inner">
             <span className="ticker-label">{t(lang, stx.tickerBadgeHi || "ताज़ा सूचना", stx.tickerBadgeEn || "LATEST UPDATE")}</span>
@@ -171,7 +171,7 @@ export function Layout({ children }) {
           </div>
         </div>
       </footer>
-      {userLevel === 4 && (
+      {userLevel === 4 && stx.floatingJoinVisible !== false && hb.floatingJoinVisible !== false && (
         <button
           type="button"
           className="floating-join no-print"
@@ -180,7 +180,7 @@ export function Layout({ children }) {
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
         >
-          ✍️ {t(lang, hb.joinLabelHi || "सदस्य बनें", hb.joinLabelEn || "Join Membership")}
+          ✍️ {t(lang, stx.floatingJoinLabelHi || hb.joinLabelHi || "सदस्य बनें", stx.floatingJoinLabelEn || hb.joinLabelEn || "Join Membership")}
         </button>
       )}
     </>

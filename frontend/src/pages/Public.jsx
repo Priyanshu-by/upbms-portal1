@@ -66,120 +66,130 @@ export function HomePage() {
 
 
       {/* CIRCULARS SECTION */}
-      <section className="section-block">
-        <div className="container">
-          <SectionHead
-            eyebrow={`📑 ${t(lang, stx.homeCircularsEyebrowHi, stx.homeCircularsEyebrowEn)}`}
-            title={t(lang, stx.homeCircularsTitleHi, stx.homeCircularsTitleEn)}
-            sub={t(lang, stx.homeCircularsSubHi, stx.homeCircularsSubEn)}
-            action={
-              <button className="btn btn-primary btn-sm" onClick={() => setRoute("circulars")}>
-                📁 {t(lang, "सभी सर्कुलर व पीडीएफ देखें", "View All Circulars & PDFs")} →
-              </button>
-            }
-          />
-          <div className="circulars-grid">
-            {(state.circulars || []).slice(0, 3).map((c) => <CircularCard key={c.id} item={c} />)}
+      {stx.homeCircularsVisible !== false && (
+        <section className="section-block">
+          <div className="container">
+            <SectionHead
+              eyebrow={`📑 ${t(lang, stx.homeCircularsEyebrowHi, stx.homeCircularsEyebrowEn)}`}
+              title={t(lang, stx.homeCircularsTitleHi, stx.homeCircularsTitleEn)}
+              sub={t(lang, stx.homeCircularsSubHi, stx.homeCircularsSubEn)}
+              action={
+                <button className="btn btn-primary btn-sm" onClick={() => setRoute("circulars")}>
+                  📁 {t(lang, "सभी सर्कुलर व पीडीएफ देखें", "View All Circulars & PDFs")} →
+                </button>
+              }
+            />
+            <div className="circulars-grid">
+              {(state.circulars || []).slice(0, 3).map((c) => <CircularCard key={c.id} item={c} />)}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* PORTALS SECTION */}
-      <section className="section-block alt-bg">
-        <div className="container">
-          <SectionHead eyebrow={`🌐 ${t(lang, stx.homePortalsEyebrowHi, stx.homePortalsEyebrowEn)}`} title={t(lang, stx.homePortalsTitleHi, stx.homePortalsTitleEn)} sub={t(lang, stx.homePortalsSubHi, stx.homePortalsSubEn)} action={<button className="btn btn-outline btn-sm" onClick={() => setRoute("portals")}>{t(lang, "सभी पोर्टल देखें", "View All Portals")} →</button>} />
-          <div className="external-portals-grid">{portals.map((l) => <PortalCard key={l.id} link={l} />)}</div>
-        </div>
-      </section>
+      {stx.homePortalsVisible !== false && (
+        <section className="section-block alt-bg">
+          <div className="container">
+            <SectionHead eyebrow={`🌐 ${t(lang, stx.homePortalsEyebrowHi, stx.homePortalsEyebrowEn)}`} title={t(lang, stx.homePortalsTitleHi, stx.homePortalsTitleEn)} sub={t(lang, stx.homePortalsSubHi, stx.homePortalsSubEn)} action={<button className="btn btn-outline btn-sm" onClick={() => setRoute("portals")}>{t(lang, "सभी पोर्टल देखें", "View All Portals")} →</button>} />
+            <div className="external-portals-grid">{portals.map((l) => <PortalCard key={l.id} link={l} />)}</div>
+          </div>
+        </section>
+      )}
 
       {/* DEMANDS / CHARTER SECTION */}
-      <section className="section-block">
-        <div className="container">
-          <SectionHead
-            eyebrow={`🤝 ${t(lang, stx.homeDemandsEyebrowHi, stx.homeDemandsEyebrowEn)}`}
-            title={t(lang, stx.homeDemandsTitleHi, stx.homeDemandsTitleEn)}
-            sub={t(lang, stx.homeDemandsSubHi, stx.homeDemandsSubEn)}
-          />
-          <div style={{ marginBottom: 18 }}>
-            <button className="btn btn-outline btn-sm" onClick={() => setRoute("about")}>
-              🏛 {t(lang, "संघ परिचय, प्रमाण-पत्र व मुख्य कार्यकारिणी →", "About, Certificates & Core Executive →")}
-            </button>
+      {stx.homeDemandsVisible !== false && (
+        <section className="section-block">
+          <div className="container">
+            <SectionHead
+              eyebrow={`🤝 ${t(lang, stx.homeDemandsEyebrowHi, stx.homeDemandsEyebrowEn)}`}
+              title={t(lang, stx.homeDemandsTitleHi, stx.homeDemandsTitleEn)}
+              sub={t(lang, stx.homeDemandsSubHi, stx.homeDemandsSubEn)}
+            />
+            <div style={{ marginBottom: 18 }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setRoute("about")}>
+                🏛 {t(lang, "संघ परिचय, प्रमाण-पत्र व मुख्य कार्यकारिणी →", "About, Certificates & Core Executive →")}
+              </button>
+            </div>
+            <div className="demands-grid">
+              {state.demands.map((d) => (
+                <div className="demand-card" key={d.id}>
+                  <div className="demand-num-row"><span className="demand-num">{d.number}</span><span className="demand-status">{t(lang, d.statusHi || d.status, d.statusEn || d.status)}</span></div>
+                  <h3 className="demand-title">{t(lang, d.titleHi, d.titleEn)}</h3>
+                  <p className="demand-desc">{t(lang, d.descHi, d.descEn)}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="demands-grid">
-            {state.demands.map((d) => (
-              <div className="demand-card" key={d.id}>
-                <div className="demand-num-row"><span className="demand-num">{d.number}</span><span className="demand-status">{t(lang, d.statusHi || d.status, d.statusEn || d.status)}</span></div>
-                <h3 className="demand-title">{t(lang, d.titleHi, d.titleEn)}</h3>
-                <p className="demand-desc">{t(lang, d.descHi, d.descEn)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* MEMBERS SECTION */}
-      <section className="section-block alt-bg">
-        <div className="container">
-          <SectionHead
-            eyebrow={`👥 ${t(lang, stx.homeMembersEyebrowHi, stx.homeMembersEyebrowEn)}`}
-            title={t(lang, stx.homeMembersTitleHi, stx.homeMembersTitleEn)}
-            action={
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn btn-outline btn-sm" onClick={() => setRoute("about")}>
-                  👑 {t(lang, "प्रदेश मुख्य कार्यकारिणी देखें", "View State Executive")}
-                </button>
-                <button className="btn btn-primary btn-sm" onClick={() => setRoute("members")}>
-                  · {t(lang, "संपूर्ण सदस्य सूची", "Full Member Directory")} →
-                </button>
-              </div>
-            }
-          />
-          <div className="general-members-grid">
-            {members.map((m) => <MemberCard key={m.id} member={m} compact />)}
+      {stx.homeMembersVisible !== false && (
+        <section className="section-block alt-bg">
+          <div className="container">
+            <SectionHead
+              eyebrow={`👥 ${t(lang, stx.homeMembersEyebrowHi, stx.homeMembersEyebrowEn)}`}
+              title={t(lang, stx.homeMembersTitleHi, stx.homeMembersTitleEn)}
+              action={
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button className="btn btn-outline btn-sm" onClick={() => setRoute("about")}>
+                    👑 {t(lang, "प्रदेश मुख्य कार्यकारिणी देखें", "View State Executive")}
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => setRoute("members")}>
+                    · {t(lang, "संपूर्ण सदस्य सूची", "Full Member Directory")} →
+                  </button>
+                </div>
+              }
+            />
+            <div className="general-members-grid">
+              {members.map((m) => <MemberCard key={m.id} member={m} compact />)}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* NEWS & SOCIAL SECTION */}
-      <section className="section-block">
-        <div className="container">
-          <SectionHead
-            eyebrow={`📰 ${t(lang, stx.homeNewsEyebrowHi, stx.homeNewsEyebrowEn)}`}
-            title={t(lang, stx.homeNewsTitleHi, stx.homeNewsTitleEn)}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,330px),1fr))", gap: 22 }}>
-            {state.news.map((n) => (
-              <article className="news-card" key={n.id}>
-                <div className="news-card-img-wrap">
-                  <img src={n.imageUrl || "/images/hero-banner-1.jpg"} alt="" />
-                </div>
-                <div className="news-card-body">
-                  <div className="news-meta-row">
-                    <span className="news-category-tag">{t(lang, n.categoryHi || n.category, n.categoryEn || n.category)}</span>
-                    {n.location && <span className="news-location">📍 {n.location}</span>}
-                    <span className="news-date">📅 {n.date}</span>
+      {stx.homeNewsVisible !== false && (
+        <section className="section-block">
+          <div className="container">
+            <SectionHead
+              eyebrow={`📰 ${t(lang, stx.homeNewsEyebrowHi, stx.homeNewsEyebrowEn)}`}
+              title={t(lang, stx.homeNewsTitleHi, stx.homeNewsTitleEn)}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,330px),1fr))", gap: 22 }}>
+              {state.news.map((n) => (
+                <article className="news-card" key={n.id}>
+                  <div className="news-card-img-wrap">
+                    <img src={n.imageUrl || "/images/hero-banner-1.jpg"} alt="" />
                   </div>
-                  <h3 className="news-title">{t(lang, n.titleHi, n.titleEn)}</h3>
-                  <p className="news-summary">{t(lang, n.summaryHi, n.summaryEn)}</p>
-                  <a
-                    className="btn btn-whatsapp btn-sm news-share-btn"
-                    href={`https://wa.me/?text=${encodeURIComponent((t(lang, n.titleHi, n.titleEn) || "") + "\n" + (n.link || window.location.href))}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    🟢 {t(lang, "WhatsApp पर साझा करें", "Share on WhatsApp")}
-                  </a>
-                </div>
-              </article>
-            ))}
+                  <div className="news-card-body">
+                    <div className="news-meta-row">
+                      <span className="news-category-tag">{t(lang, n.categoryHi || n.category, n.categoryEn || n.category)}</span>
+                      {n.location && <span className="news-location">📍 {n.location}</span>}
+                      <span className="news-date">📅 {n.date}</span>
+                    </div>
+                    <h3 className="news-title">{t(lang, n.titleHi, n.titleEn)}</h3>
+                    <p className="news-summary">{t(lang, n.summaryHi, n.summaryEn)}</p>
+                    <a
+                      className="btn btn-whatsapp btn-sm news-share-btn"
+                      href={`https://wa.me/?text=${encodeURIComponent((t(lang, n.titleHi, n.titleEn) || "") + "\n" + (n.link || window.location.href))}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      🟢 {t(lang, "WhatsApp पर साझा करें", "Share on WhatsApp")}
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="social-connect-grid" style={{ marginTop: 24 }}>
+              {[["whatsappChannel", "WhatsApp Channel"], ["facebook", "Facebook"], ["youtube", "YouTube"], ["telegram", "Telegram"]].filter(([k]) => sl[k]).map(([k, label]) => (
+                <a key={k} href={sl[k]} target="_blank" rel="noreferrer" className="social-big-btn">{label}</a>
+              ))}
+            </div>
           </div>
-          <div className="social-connect-grid" style={{ marginTop: 24 }}>
-            {[["whatsappChannel", "WhatsApp Channel"], ["facebook", "Facebook"], ["youtube", "YouTube"], ["telegram", "Telegram"]].filter(([k]) => sl[k]).map(([k, label]) => (
-              <a key={k} href={sl[k]} target="_blank" rel="noreferrer" className="social-big-btn">{label}</a>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
     </>
   );
 }

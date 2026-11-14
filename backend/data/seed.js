@@ -91,6 +91,7 @@ function createSeedDatabase() {
         joinLabelHi: "सदस्य बनें",
         joinLabelEn: "Join Membership",
         joinVisible: true,
+        floatingJoinVisible: true,
         memberLoginLabelHi: "सदस्य लॉगिन",
         memberLoginLabelEn: "Member Login",
         memberLoginVisible: true,
@@ -100,8 +101,13 @@ function createSeedDatabase() {
 
       // Editable Section Headings & Footer Texts (100% Bilingual, pure spelling, zero technical jargon)
       sectionTexts: {
+        floatingJoinVisible: true,
+        floatingJoinLabelHi: "सदस्य बनें",
+        floatingJoinLabelEn: "Join Membership",
+        tickerVisible: true,
         tickerBadgeHi: "ताज़ा सूचना",
         tickerBadgeEn: "LATEST UPDATE",
+        homeCircularsVisible: true,
         homeCircularsEyebrowHi: "बैंक आदेश एवं आधिकारिक परिपत्र",
         homeCircularsEyebrowEn: "BANK ORDERS & OFFICIAL CIRCULARS",
         homeCircularsTitleHi: "बैंक मित्रों से संबंधित नवीनतम सर्कुलर एवं दिशानिर्देश",
@@ -109,6 +115,7 @@ function createSeedDatabase() {
         homeCircularsSubHi: "भारतीय रिज़र्व बैंक, एसएलबीसी एवं प्रायोजक बैंकों द्वारा जारी महत्वपूर्ण परिपत्र व आदेश।",
         homeCircularsSubEn: "Important circulars and notifications issued by RBI, SLBC, and sponsor banks.",
 
+        homePortalsVisible: true,
         homePortalsEyebrowHi: "संबद्ध आधिकारिक पोर्टल",
         homePortalsEyebrowEn: "IMPORTANT OFFICIAL PORTALS",
         homePortalsTitleHi: "बैंक मित्रों के लिए उपयोगी बैंकिंग एवं शासकीय वेबसाइट्स",
@@ -116,6 +123,7 @@ function createSeedDatabase() {
         homePortalsSubHi: "दैनिक बैंकिंग कार्यों, परीक्षा, पोर्टल लॉगिन एवं साइबर सुरक्षा से जुड़े आधिकारिक लिंक।",
         homePortalsSubEn: "Direct access to daily banking services, certification exams, and cyber safety portals.",
 
+        homeDemandsVisible: true,
         homeDemandsEyebrowHi: "बैंक मित्र अधिकार चार्टर",
         homeDemandsEyebrowEn: "CHARTER OF DEMANDS",
         homeDemandsTitleHi: "उत्तर प्रदेश बैंक मित्र संघ की प्रमुख मांगें",
@@ -123,11 +131,13 @@ function createSeedDatabase() {
         homeDemandsSubHi: "प्रदेश के प्रत्येक ग्राहक सेवा केंद्र संचालक के सम्मान, सुरक्षा और आर्थिक स्थायित्व हेतु संघ का संकल्प।",
         homeDemandsSubEn: "Our collective charter for the dignity, safety, and financial stability of every CSP operator.",
 
+        homeMembersVisible: true,
         homeMembersEyebrowHi: "सक्रिय सदस्य नेटवर्क",
         homeMembersEyebrowEn: "ACTIVE MEMBER NETWORK",
         homeMembersTitleHi: "जिला पदाधिकारी एवं सक्रिय बैंक मित्र सदस्य",
         homeMembersTitleEn: "District Office-Bearers & Active Bank Mitra Members",
 
+        homeNewsVisible: true,
         homeNewsEyebrowHi: "संघ गतिविधियाँ एवं समाचार",
         homeNewsEyebrowEn: "ASSOCIATION NEWS & ACTIVITIES",
         homeNewsTitleHi: "ताज़ा समाचार एवं सोशल मीडिया मंच",

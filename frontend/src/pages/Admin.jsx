@@ -904,7 +904,7 @@ function Menus({ state, saveSettings }) {
   function saveButtons(e) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.target).entries());
-    ["idcardVisible", "donationVisible", "joinVisible", "memberLoginVisible", "adminVisible"].forEach((k) => {
+    ["idcardVisible", "donationVisible", "joinVisible", "floatingJoinVisible", "memberLoginVisible", "adminVisible"].forEach((k) => {
       const el = e.target.querySelector(`[name="${k}"]`);
       if (el) raw[k] = el.checked;
     });
@@ -914,6 +914,18 @@ function Menus({ state, saveSettings }) {
   function saveTexts(e) {
     e.preventDefault();
     const raw = Object.fromEntries(new FormData(e.target).entries());
+    [
+      "floatingJoinVisible",
+      "tickerVisible",
+      "homeCircularsVisible",
+      "homePortalsVisible",
+      "homeDemandsVisible",
+      "homeMembersVisible",
+      "homeNewsVisible"
+    ].forEach((k) => {
+      const el = e.target.querySelector(`[name="${k}"]`);
+      if (el) raw[k] = el.checked;
+    });
     saveSettings({ sectionTexts: { ...stx, ...raw } }, t(lang, "सेक्शन व फुटर शीर्षक सेव हो गए", "Section and footer titles saved successfully"));
   }
 
@@ -1077,14 +1089,20 @@ function Menus({ state, saveSettings }) {
 
             {/* Button 3: Join */}
             <div className="header-btn-config-card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
                 <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.98rem", display: "flex", alignItems: "center", gap: 8 }}>
                   ✍️ {t(lang, "सदस्यता पंजीकरण बटन (Join Button)", "Join Membership Button")}
                 </div>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
-                  <input type="checkbox" name="joinVisible" defaultChecked={hb.joinVisible !== false} />
-                  <span>{t(lang, "हेडर पर दिखाएँ (Show)", "Show on Header")}</span>
-                </label>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                    <input type="checkbox" name="joinVisible" defaultChecked={hb.joinVisible !== false} />
+                    <span>{t(lang, "हेडर पर दिखाएँ (Show)", "Show on Header")}</span>
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                    <input type="checkbox" name="floatingJoinVisible" defaultChecked={hb.floatingJoinVisible !== false && stx.floatingJoinVisible !== false} />
+                    <span>{t(lang, "फ्लोटिंग बटन दिखाएँ (Show Floating)", "Show Floating Button")}</span>
+                  </label>
+                </div>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "हिंदी लेबल (Hindi Label)", "Hindi Label")}>
@@ -1161,10 +1179,48 @@ function Menus({ state, saveSettings }) {
           </div>
 
           <div style={{ display: "grid", gap: 16 }}>
+            {/* Floating 'Join Membership' Button */}
+            <div className="header-btn-config-card" style={{ borderLeft: "4px solid #ea580c", background: "linear-gradient(to right, #fff7ed, #ffffff)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ fontWeight: 900, color: "#ea580c", fontSize: "1rem", display: "flex", alignItems: "center", gap: 8 }}>
+                  ✍️ {t(lang, "फ्लोटिंग 'सदस्य बनें' बटन (Floating Join Button)", "Floating 'Join Membership' Button")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", background: "#ffffff", padding: "6px 14px", borderRadius: 8, border: "1.5px solid #fdba74", boxShadow: "0 2px 6px rgba(234,88,12,0.12)" }}>
+                  <input
+                    type="checkbox"
+                    name="floatingJoinVisible"
+                    defaultChecked={stx.floatingJoinVisible !== false}
+                  />
+                  <span>{t(lang, "स्क्रीन पर दिखाएँ (सक्रिय)", "Show on Screen (Active)")}</span>
+                </label>
+              </div>
+              <p style={{ color: "#475569", fontSize: "0.85rem", margin: "0 0 12px", lineHeight: 1.5 }}>
+                {t(
+                  lang,
+                  "होमपेज एवं अन्य पृष्ठों पर स्क्रीन के नीचे बाईं ओर दिखाई देने वाले '✍ सदस्य बनें' फ्लोटिंग बटन को हटाने (Remove) या छिपाने के लिए उपरोक्त टिक मार्क (Checkbox) हटा दें।",
+                  "Uncheck the box above to remove / hide the floating '✍ Join Membership' button located at the bottom-left of the screen."
+                )}
+              </p>
+              <div className="form-grid">
+                <Field label={t(lang, "हिंदी बटन लेबल (Hindi Label)", "Hindi Button Label")}>
+                  <Inp name="floatingJoinLabelHi" defaultValue={stx.floatingJoinLabelHi || hb.joinLabelHi || "सदस्य बनें"} />
+                </Field>
+                <Field label={t(lang, "English Button Label", "English Button Label")}>
+                  <Inp name="floatingJoinLabelEn" defaultValue={stx.floatingJoinLabelEn || hb.joinLabelEn || "Join Membership"} />
+                </Field>
+              </div>
+            </div>
+
             {/* Ticker */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                📢 {t(lang, "ताज़ा सूचना टिकर बैज (Ticker Badge)", "Notice Ticker Badge")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  📢 {t(lang, "ताज़ा सूचना टिकर बैज (Ticker Badge)", "Notice Ticker Badge")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="tickerVisible" defaultChecked={stx.tickerVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "बैज हिंदी", "Badge Hindi")}>
@@ -1178,8 +1234,14 @@ function Menus({ state, saveSettings }) {
 
             {/* Circulars Section */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                📑 {t(lang, "सर्कुलर व शासकीय आदेश सेक्शन शीर्षक", "Circulars Section Title")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  📑 {t(lang, "सर्कुलर व शासकीय आदेश सेक्शन शीर्षक", "Circulars Section Title")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="homeCircularsVisible" defaultChecked={stx.homeCircularsVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "शीर्षक हिंदी", "Title Hindi")}>
@@ -1193,8 +1255,14 @@ function Menus({ state, saveSettings }) {
 
             {/* Portals Section */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                🌐 {t(lang, "महत्वपूर्ण बैंकिंग पोर्टल सेक्शन शीर्षक", "Banking Portals Section Title")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  🌐 {t(lang, "महत्वपूर्ण बैंकिंग पोर्टल सेक्शन शीर्षक", "Banking Portals Section Title")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="homePortalsVisible" defaultChecked={stx.homePortalsVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "शीर्षक हिंदी", "Title Hindi")}>
@@ -1208,8 +1276,14 @@ function Menus({ state, saveSettings }) {
 
             {/* Demands Section */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                📜 {t(lang, "10-सूत्री मांग-पत्र सेक्शन शीर्षक", "10-Point Charter of Demands Title")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  📜 {t(lang, "10-सूत्री मांग-पत्र सेक्शन शीर्षक", "10-Point Charter of Demands Title")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="homeDemandsVisible" defaultChecked={stx.homeDemandsVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "शीर्षक हिंदी", "Title Hindi")}>
@@ -1223,8 +1297,14 @@ function Menus({ state, saveSettings }) {
 
             {/* Members Section */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                👥 {t(lang, "कार्यकारिणी एवं सदस्य संजाल शीर्षक", "Executive & Members Directory Title")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  👥 {t(lang, "कार्यकारिणी एवं सदस्य संजाल शीर्षक", "Executive & Members Directory Title")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="homeMembersVisible" defaultChecked={stx.homeMembersVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "शीर्षक हिंदी", "Title Hindi")}>
@@ -1238,8 +1318,14 @@ function Menus({ state, saveSettings }) {
 
             {/* News Section */}
             <div className="header-btn-config-card">
-              <div style={{ fontWeight: 900, color: "var(--primary)", marginBottom: 8, fontSize: "0.95rem" }}>
-                📰 {t(lang, "संगठनात्मक समाचार एवं प्रेस विज्ञप्ति शीर्षक", "News & Press Releases Title")}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                  📰 {t(lang, "संगठनात्मक समाचार एवं प्रेस विज्ञप्ति शीर्षक", "News & Press Releases Title")}
+                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" name="homeNewsVisible" defaultChecked={stx.homeNewsVisible !== false} />
+                  <span>{t(lang, "होमपेज पर दिखाएँ (Show)", "Show on Homepage")}</span>
+                </label>
               </div>
               <div className="form-grid">
                 <Field label={t(lang, "शीर्षक हिंदी", "Title Hindi")}>
