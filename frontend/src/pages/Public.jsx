@@ -1298,8 +1298,10 @@ function Field({ label, error, ...props }) {
 }
 
 function LoginModalContent({ modal, setModal, lang, showToast, persistSession, refresh }) {
-  const { setRoute } = usePortal();
-  const [loginTab, setLoginTab] = useState("otp"); // Default to Passwordless Email OTP
+  const { setRoute, state } = usePortal();
+  const allowedMethod = state?.settings?.loginMethod || "both"; // "both", "otp", "password"
+  const defaultTab = allowedMethod === "password" ? "password" : "otp";
+  const [loginTab, setLoginTab] = useState(defaultTab);
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
@@ -1309,6 +1311,14 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
     googleClientId: "",
     database: { connected: false }
   });
+
+  useEffect(() => {
+    if (allowedMethod === "password" && loginTab !== "password") {
+      setLoginTab("password");
+    } else if (allowedMethod === "otp" && loginTab !== "otp") {
+      setLoginTab("otp");
+    }
+  }, [allowedMethod]);
 
   // ── Email OTP Authentication State ──
   const [otpEmail, setOtpEmail] = useState("");
@@ -1559,7 +1569,11 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
           <div className="login-header-icon-badge">🔐</div>
           <div>
             <div className="login-header-title">{t(lang, "पोर्टल लॉगिन (User Authentication)", "Portal Authentication")}</div>
-            <div className="login-header-subtitle">{t(lang, "पासवर्ड-मुक्त ईमेल OTP सत्यापन • UPBMS", "Passwordless Email OTP Verification • UPBMS")}</div>
+            <div className="login-header-subtitle">
+              {allowedMethod === "otp" && t(lang, "पासवर्ड-मुक्त ईमेल OTP सत्यापन • UPBMS", "Passwordless Email OTP Verification • UPBMS")}
+              {allowedMethod === "password" && t(lang, "सुरक्षित सदस्य आईडी व पासवर्ड लॉगिन • UPBMS", "Secure Member ID & Password Login • UPBMS")}
+              {allowedMethod === "both" && t(lang, "ईमेल OTP अथवा पासवर्ड द्वारा लॉगिन • UPBMS", "Email OTP or Password Login • UPBMS")}
+            </div>
           </div>
         </div>
         <button
@@ -1572,37 +1586,39 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
         </button>
       </div>
 
-      {/* Primary Tab Switcher */}
-      <div className="login-tabs-strip">
-        <button
-          type="button"
-          className={`login-tab-btn ${loginTab === "otp" ? "active" : ""}`}
-          onClick={() => { setLoginTab("otp"); setAuthError(""); setAuthSuccess(""); }}
-        >
-          📧 {t(lang, "ईमेल OTP लॉगिन", "Email OTP Login")}
-        </button>
-        <button
-          type="button"
-          className={`login-tab-btn ${loginTab === "password" ? "active" : ""}`}
-          onClick={() => { setLoginTab("password"); setAuthError(""); setAuthSuccess(""); }}
-        >
-          🔑 {t(lang, "पासवर्ड / एडमिन", "Password / Admin")}
-        </button>
-        {authConfig.isGoogleAuthConfigured && (
+      {/* Primary Tab Switcher - Shown when both methods are enabled */}
+      {allowedMethod === "both" && (
+        <div className="login-tabs-strip">
           <button
             type="button"
-            className={`login-tab-btn ${loginTab === "google" ? "active" : ""}`}
-            onClick={() => { setLoginTab("google"); setAuthError(""); setAuthSuccess(""); }}
+            className={`login-tab-btn ${loginTab === "otp" ? "active" : ""}`}
+            onClick={() => { setLoginTab("otp"); setAuthError(""); setAuthSuccess(""); }}
           >
-            🌐 Google
+            📧 {t(lang, "ईमेल OTP लॉगिन", "Email OTP Login")}
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            className={`login-tab-btn ${loginTab === "password" ? "active" : ""}`}
+            onClick={() => { setLoginTab("password"); setAuthError(""); setAuthSuccess(""); }}
+          >
+            🔑 {t(lang, "पासवर्ड / एडमिन", "Password / Admin")}
+          </button>
+          {authConfig.isGoogleAuthConfigured && (
+            <button
+              type="button"
+              className={`login-tab-btn ${loginTab === "google" ? "active" : ""}`}
+              onClick={() => { setLoginTab("google"); setAuthError(""); setAuthSuccess(""); }}
+            >
+              🌐 Google
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 1: PASSWORDLESS EMAIL OTP AUTHENTICATION (PRIMARY FLOW)
+          TAB 1: PASSWORDLESS EMAIL OTP AUTHENTICATION
           ───────────────────────────────────────────────────────────── */}
-      {loginTab === "otp" && (
+      {(allowedMethod === "otp" || (allowedMethod === "both" && loginTab === "otp")) && (
         <div className="otp-box-screen">
           {/* Show warning banner only if database or gmail is awaiting configuration */}
           {(!authConfig.database?.connected || !authConfig.isGmailConfigured) && (
@@ -1786,7 +1802,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
       {/* ─────────────────────────────────────────────────────────────
           TAB 2: PASSWORD / ADMIN LOGIN (PRESERVES EXISTING ADMIN ACCESS)
           ───────────────────────────────────────────────────────────── */}
-      {loginTab === "password" && (
+      {(allowedMethod === "password" || (allowedMethod === "both" && loginTab === "password")) && (
         <form onSubmit={handlePasswordLogin} className="login-form-container">
           {authError && (
             <div className="auth-error-box">
@@ -1891,7 +1907,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
       {/* ─────────────────────────────────────────────────────────────
           TAB 3: GOOGLE ONE-TAP LOGIN
           ───────────────────────────────────────────────────────────── */}
-      {loginTab === "google" && (
+      {(allowedMethod === "both" && loginTab === "google") && (
         <div className="login-form-container">
           {authError && (
             <div className="auth-error-box">

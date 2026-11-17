@@ -773,6 +773,11 @@ app.put("/api/settings", requireAdmin, async (req, res) => {
   const currentPin = db.settings.adminPin || "1234";
   const prev = db.settings;
 
+  // Level 1 Super Admin restriction for login system display settings
+  if (body.loginMethod !== undefined && req.auth.level !== 1) {
+    return res.status(403).json({ ok: false, error: "Only Level 1 Super Admin can configure login system options" });
+  }
+
   // Clean up replaced Cloudinary images
   if (body.sealImageUrl && prev.sealImageUrl && body.sealImageUrl !== prev.sealImageUrl && prev.sealPublicId) {
     deleteFromCloudinary(prev.sealPublicId).catch(() => {});

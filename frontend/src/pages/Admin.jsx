@@ -6,6 +6,7 @@ import { t, localizeDual } from "../utils";
 const TABS = [
   ["dashboard", "📊 डैशबोर्ड", "📊 Dashboard"],
   ["users", "👥 उपयोगकर्ता प्रबंधन", "👥 User Management"],
+  ["loginsettings", "🔐 लॉगिन सिस्टम विकल्प", "🔐 Login System Options"],
   ["signs", "✍️ हस्ताक्षर एवं मुहर", "✍️ Signature & Seal"],
   ["menus", "🧭 मेनू व सेक्शन", "🧭 Menus & Sections"],
   ["about", "🏛️ परिचय व प्रमाण-पत्र", "🏛️ About & Certificates"],
@@ -167,8 +168,8 @@ export function AdminPage() {
 
   const saveSettings = (patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg);
 
-  // Filter tabs: Level 2 admins cannot see or access User Management!
-  const visibleTabs = TABS.filter(([id]) => id !== "users" || isSuperAdmin);
+  // Filter tabs: Level 2 admins cannot see or access User Management or Login System Settings!
+  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "loginsettings") || isSuperAdmin);
 
   return (
     <div className="container" style={{ padding: "18px 0 40px" }}>
@@ -199,6 +200,16 @@ export function AdminPage() {
               <div className="card-panel">
                 <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
                 <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है। Level 2 प्रशासक इसे एक्सेस नहीं कर सकते।", "User Management is strictly restricted to Level 1 Super Admin. Level 2 Admins cannot access this section.")}</p>
+              </div>
+            )
+          )}
+          {tab === "loginsettings" && (
+            isSuperAdmin ? (
+              <LoginSettingsTab state={state} saveSettings={saveSettings} lang={lang} setRoute={setRoute} />
+            ) : (
+              <div className="card-panel">
+                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
+                <p>{t(lang, "लॉगिन सिस्टम सेटिंग्स केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है।", "Login system options are strictly restricted to Level 1 Super Admin.")}</p>
               </div>
             )
           )}
@@ -236,6 +247,163 @@ async function download(path, filename, session) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function LoginSettingsTab({ state, saveSettings, lang, setRoute, isEmbedded = false }) {
+  const current = state?.settings?.loginMethod || "both";
+  const [selected, setSelected] = useState(current);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (state?.settings?.loginMethod) {
+      setSelected(state.settings.loginMethod);
+    }
+  }, [state?.settings?.loginMethod]);
+
+  const options = [
+    {
+      id: "both",
+      icon: "🔄",
+      badge: t(lang, "अनुशंसित (Recommended)", "Recommended"),
+      badgeClass: "recommended",
+      title: t(lang, "दोनों विकल्प दिखाएं (Both OTP & Password)", "Show Both (OTP & Password)"),
+      desc: t(
+        lang,
+        "सार्वजनिक पोर्टल के लॉगिन मॉडल में 'ईमेल OTP लॉगिन' और 'पासवर्ड / एडमिन' दोनों टैब प्रदर्शित होंगे। उपयोगकर्ता अपनी पसंद से किसी भी तरीके से लॉगिन कर सकते हैं।",
+        "Both 'Email OTP Login' and 'Password / Admin' tabs will be displayed. Users can choose either method freely."
+      )
+    },
+    {
+      id: "otp",
+      icon: "📧",
+      badge: t(lang, "पासवर्ड-मुक्त (Passwordless)", "Passwordless"),
+      badgeClass: "otp",
+      title: t(lang, "केवल ईमेल OTP लॉगिन (Email OTP Only)", "Email OTP Login Only"),
+      desc: t(
+        lang,
+        "सार्वजनिक पोर्टल पर केवल 6-अंकीय ईमेल OTP सत्यापन स्क्रीन दिखाई देगी। पासवर्ड टैब पूर्णतः छिपा रहेगा। नए उपयोगकर्ताओं का स्वतः पंजीकरण होगा।",
+        "Passwords are completely disabled for the public. Only 6-digit Email OTP login is shown. Password tab is hidden."
+      )
+    },
+    {
+      id: "password",
+      icon: "🔑",
+      badge: t(lang, "पारंपरिक (Classic)", "Classic"),
+      badgeClass: "pass",
+      title: t(lang, "केवल पासवर्ड लॉगिन (Password Only)", "Password Login Only"),
+      desc: t(
+        lang,
+        "पारंपरिक सदस्य आईडी / यूज़रनेम एवं पासवर्ड आधारित लॉगिन स्क्रीन दिखाई देगी। ईमेल OTP विकल्प छिपा रहेगा।",
+        "Classic Member ID/Username & Password login form is shown. Email OTP tab is hidden."
+      )
+    }
+  ];
+
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await saveSettings(
+        { loginMethod: selected },
+        t(lang, "लॉगिन सिस्टम विज़िबिलिटी विकल्प सफलतापूर्वक सहेजे गए!", "Login system options saved successfully!")
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card-panel" style={{ padding: isEmbedded ? "22px 20px" : "28px 24px", borderRadius: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800, marginBottom: 8 }}>
+            👑 {t(lang, "केवल Level 1 (सुपर एडमिन) नियंत्रण", "Level 1 Super Admin Exclusive")}
+          </div>
+          <h2 style={{ color: "var(--primary)", fontSize: "1.35rem", fontWeight: 900, margin: "0 0 6px 0" }}>
+            🔐 {t(lang, "सार्वजनिक लॉगिन सिस्टम विकल्प (Login System Options)", "Public Login System Options")}
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: 0, maxWidth: 700 }}>
+            {t(
+              lang,
+              "निर्धारित करें कि मुख्य वेबसाइट पर 'लॉगिन' बटन दबाने पर उपयोगकर्ताओं को कौन-सा लॉगिन विकल्प प्रस्तुत किया जाएगा:",
+              "Configure which authentication sections appear in the public login modal for visitors and members:"
+            )}
+          </p>
+        </div>
+
+        <button
+          className="btn btn-primary btn-md"
+          onClick={handleSave}
+          disabled={saving || selected === current}
+          style={{ minWidth: 150, fontWeight: 800 }}
+        >
+          {saving ? "⏳ सहेजा जा रहा है..." : (selected === current ? "✅ सक्रिय (Active)" : "💾 सेटिंग्स सहेजें")}
+        </button>
+      </div>
+
+      {/* Interactive Option Cards */}
+      <div className="login-settings-grid">
+        {options.map((opt) => {
+          const isSelected = selected === opt.id;
+          return (
+            <div
+              key={opt.id}
+              className={`login-setting-card ${isSelected ? "active" : ""}`}
+              onClick={() => setSelected(opt.id)}
+            >
+              <div>
+                <span className={`login-setting-badge ${opt.badgeClass}`}>{opt.badge}</span>
+                <div className="login-setting-icon">{opt.icon}</div>
+                <h3 className="login-setting-title">{opt.title}</h3>
+                <p className="login-setting-desc">{opt.desc}</p>
+              </div>
+
+              <div className="login-setting-radio">
+                <input
+                  type="radio"
+                  name={`loginMethodGroup_${isEmbedded ? "embed" : "tab"}`}
+                  value={opt.id}
+                  checked={isSelected}
+                  onChange={() => setSelected(opt.id)}
+                  style={{ cursor: "pointer", width: 18, height: 18 }}
+                />
+                <span>{isSelected ? t(lang, "सक्रिय चयन (Selected)", "Selected") : t(lang, "चुनने हेतु क्लिक करें", "Click to Select")}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Live Status Summary */}
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 18px", marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+            {t(lang, "वर्तमान सक्रिय विधा:", "Currently Active Setting:")}{" "}
+          </span>
+          <b style={{ color: "#0f172a", fontSize: "0.95rem" }}>
+            {current === "both" && "🔄 " + t(lang, "दोनों (Email OTP + Password)", "Both (Email OTP + Password)")}
+            {current === "otp" && "📧 " + t(lang, "केवल Email OTP लॉगिन", "Email OTP Only")}
+            {current === "password" && "🔑 " + t(lang, "केवल पासवर्ड लॉगिन", "Password Only")}
+          </b>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: "0.82rem", color: "#64748b" }}>
+            📧 {t(lang, "आधिकारिक प्रेषक:", "Sender:")} <code style={{ color: "#2563eb" }}>upbmsofficial@gmail.com</code>
+          </span>
+          {setRoute && (
+            <button
+              type="button"
+              className="btn btn-outline btn-xs"
+              style={{ marginLeft: 6 }}
+              onClick={() => setRoute("home")}
+            >
+              🌐 {t(lang, "होमपेज पर देखें", "View on Site")}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function UsersManagement({ portal, run }) {
@@ -360,6 +528,15 @@ function UsersManagement({ portal, run }) {
           </button>
         </div>
       </div>
+
+      {/* 1.5. Level 1 Exclusive: Public Login System Visibility Setting */}
+      <LoginSettingsTab
+        state={state}
+        saveSettings={(patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg)}
+        lang={lang}
+        setRoute={portal.setRoute}
+        isEmbedded={true}
+      />
 
       {/* 2. 4 Levels Summary Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
