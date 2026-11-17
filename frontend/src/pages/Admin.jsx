@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, uploadFile } from "../api";
+import { api, uploadFile, optimizeImageUrl } from "../api";
 import { usePortal } from "../context";
 import { t, localizeDual } from "../utils";
 
@@ -17,6 +17,7 @@ const TABS = [
   ["portals", "🌐 पोर्टल", "🌐 Portals"],
   ["payments", "💳 शुल्क व रसीद", "💳 Fees & Receipts"],
   ["grievance", "⚖️ शिकायत व समाचार", "⚖️ Grievance & News"],
+  ["verifylogs", "🔍 सत्यापन रिकॉर्ड", "🔍 Verification Records"],
   ["branding", "⚙️ संस्था व ब्रांडिंग", "⚙️ Org & Branding"]
 ];
 
@@ -212,6 +213,7 @@ export function AdminPage() {
           {tab === "portals" && <Portals state={state} run={run} session={session} showToast={showToast} saveSettings={saveSettings} />}
           {tab === "payments" && <Payments state={state} saveSettings={saveSettings} run={run} />}
           {tab === "grievance" && <GrievanceNews state={state} saveSettings={saveSettings} run={run} session={session} showToast={showToast} />}
+          {tab === "verifylogs" && <VerifyLogs state={state} session={session} run={run} />}
           {tab === "branding" && <Branding state={state} saveSettings={saveSettings} session={session} showToast={showToast} persistSession={persistSession} refresh={refresh} />}
         </section>
       </div>
@@ -413,7 +415,7 @@ function UsersManagement({ portal, run }) {
             {t(lang, "सामान्य आगंतुक / गेस्ट", "Guest / Visitor")}
           </div>
           <p style={{ fontSize: "0.82rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.4 }}>
-            {t(lang, "केवल सार्वजनिक वेबसाइट। सदस्य सूची व एडमिन पूर्ण वर्जित। सदस्यता लेकर Level 3 बन सकते हैं।", "Public website only. No Members page, No Admin. Can join to become Level 3.")}
+            {t(lang, "सार्वजनिक वेबसाइट एवं सदस्य सूची। एडमिन पूर्ण वर्जित। सदस्यता लेकर Level 3 बन सकते हैं।", "Public website and Member Directory. No Admin access. Can join to become Level 3.")}
           </p>
         </div>
       </div>
@@ -1753,7 +1755,7 @@ function About({ state, saveSettings, run, session, showToast }) {
                     if (!f) return;
                     setUploading(true);
                     try {
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/certificates" });
                       setFile({ url, type: f.type === "application/pdf" ? "pdf" : "image" });
                       showToast(t(lang, "फाइल सफलतापूर्वक अपलोड हो गई", "File uploaded successfully"));
                     } catch (err) {
@@ -1848,7 +1850,7 @@ function About({ state, saveSettings, run, session, showToast }) {
                         if (!f) return;
                         setEditUploading(true);
                         try {
-                          const url = await uploadFile(f, session);
+                          const url = await uploadFile(f, session, { folder: "upbms/certificates" });
                           setEditFile({ url, type: f.type === "application/pdf" ? "pdf" : "image" });
                           showToast(t(lang, "नई फाइल तैयार है", "New file is ready"));
                         } catch (err) {
@@ -2143,7 +2145,7 @@ function Signs({ state, saveSettings, session, showToast, run }) {
             <img src={seal} alt="Seal" style={{ width: 76, height: 76, objectFit: "contain", background: "#fff", borderRadius: 10, border: "1.5px solid #cbd5e1", padding: 4 }} />
             <div>
               <div style={{ fontSize: "0.88rem", fontWeight: 700, marginBottom: 4 }}>{t(lang, "नई मुहर इमेज अपलोड करें:", "Upload New Official Seal Image:")}</div>
-              <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setSeal(await uploadFile(f, session)); showToast("मुहर तैयार, सेव करें"); } }} />
+              <input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setSeal(await uploadFile(f, session, { folder: "upbms/branding" })); showToast("मुहर तैयार, सेव करें"); } }} />
             </div>
           </div>
 
@@ -2204,8 +2206,8 @@ function OfficerForm({ sig, list, idx, saveSettings, session, showToast }) {
             <option value="combined">{t(lang, "मुहर और हस्ताक्षर एक साथ", "Combined Seal & Signature")}</option>
           </select>
         </label>
-        <label>हस्ताक्षर {sep && <img src={sep} alt="" style={{ height: 40 }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setSep(await uploadFile(f, session)); showToast("हस्ताक्षर अपलोड"); } }} /></label>
-        <label>संयुक्त इमेज {comb && <img src={comb} alt="" style={{ height: 40 }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setComb(await uploadFile(f, session)); showToast("संयुक्त इमेज अपलोड"); } }} /></label>
+        <label>हस्ताक्षर {sep && <img src={sep} alt="" style={{ height: 40 }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setSep(await uploadFile(f, session, { folder: "upbms/branding" })); showToast("हस्ताक्षर अपलोड"); } }} /></label>
+        <label>संयुक्त इमेज {comb && <img src={comb} alt="" style={{ height: 40 }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setComb(await uploadFile(f, session, { folder: "upbms/branding" })); showToast("संयुक्त इमेज अपलोड"); } }} /></label>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
         <button className="btn btn-primary btn-sm">💾 {t(lang, "अपडेट", "Update")}</button>
@@ -2243,8 +2245,8 @@ function NewOfficer({ list, saveSettings, session, showToast }) {
         <Inp name="nameEn" placeholder="Name" required />
         <Inp name="designationHi" placeholder="पद हिंदी" required />
         <Inp name="designationEn" placeholder="Designation" required />
-        <label>हस्ताक्षर<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setSep(await uploadFile(f, session)); }} /></label>
-        <label>संयुक्त<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setComb(await uploadFile(f, session)); showToast("इमेज तैयार"); } }} /></label>
+        <label>हस्ताक्षर<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setSep(await uploadFile(f, session, { folder: "upbms/branding" })); }} /></label>
+        <label>संयुक्त<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setComb(await uploadFile(f, session, { folder: "upbms/branding" })); showToast("इमेज तैयार"); } }} /></label>
       </div>
       <button className="btn btn-accent btn-sm" style={{ marginTop: 10 }}>➕ {t(lang, "जोड़ें", "Add Signatory")}</button>
     </form>
@@ -2439,7 +2441,7 @@ function Templates({ state, saveSettings, session, showToast }) {
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
                       if (!f) return;
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/branding" });
                       setLetterImg(url);
                       showToast(t(lang, "लेटर बैकग्राउंड इमेज तैयार, सेव करें", "Letter BG image ready, click save"));
                     }}
@@ -2485,7 +2487,7 @@ function Templates({ state, saveSettings, session, showToast }) {
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
                       if (!f) return;
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/branding" });
                       setIdImg(url);
                       showToast(t(lang, "ID कार्ड बैकग्राउंड तैयार, सेव करें", "ID Card BG ready, click save"));
                     }}
@@ -2531,7 +2533,7 @@ function Templates({ state, saveSettings, session, showToast }) {
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
                       if (!f) return;
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/branding" });
                       setRcpImg(url);
                       showToast(t(lang, "रसीद बैकग्राउंड तैयार, सेव करें", "Receipt BG ready, click save"));
                     }}
@@ -2841,7 +2843,7 @@ function Hero({ state, saveSettings, run, session, showToast }) {
                       if (!f) return;
                       setUploading(true);
                       try {
-                        const url = await uploadFile(f, session);
+                        const url = await uploadFile(f, session, { folder: "upbms/slides" });
                         setImageUrl(url);
                         showToast(t(lang, "इमेज तैयार है", "Image uploaded successfully"));
                       } catch (err) {
@@ -2851,9 +2853,17 @@ function Hero({ state, saveSettings, run, session, showToast }) {
                       }
                     }}
                   />
-                  {uploading && <span style={{ color: "#ea580c", fontWeight: 700, fontSize: "0.85rem" }}>⏳ {t(lang, "अपलोड हो रहा है...", "Uploading...")}</span>}
-                  {imageUrl && <span style={{ color: "#16a34a", fontWeight: 800, fontSize: "0.85rem" }}>✓ {t(lang, "इमेज संलग्न", "Image Attached")}</span>}
+                  {uploading && <span style={{ color: "#ea580c", fontWeight: 700, fontSize: "0.85rem" }}>⏳ {t(lang, "ऑप्टिमाइज़ और अपलोड हो रहा है...", "Optimizing & uploading...")}</span>}
+                  {imageUrl && <span style={{ color: "#16a34a", fontWeight: 800, fontSize: "0.85rem" }}>✓ {t(lang, "इमेज संलग्न (ऑप्टिमाइज़्ड)", "Image Attached (Optimized)")}</span>}
                 </div>
+                <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 6 }}>
+                  ⚡ {t(lang, "क्लाउडिनरी ऑटो-कंप्रेशन सक्रिय: बड़ी फोटो स्वतः कंप्रेस होकर मोबाइल व वेब पर तेजी से लोड होगी।", "Cloudinary Auto-Compression Active: High-res images are automatically compressed to load fast on mobile & web.")}
+                </div>
+                {imageUrl && (
+                  <div style={{ marginTop: 10, maxWidth: 360, borderRadius: 10, overflow: "hidden", border: "1.5px solid #cbd5e1" }}>
+                    <img src={optimizeImageUrl(imageUrl, { width: 480 })} alt="Preview" style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2901,7 +2911,7 @@ function Hero({ state, saveSettings, run, session, showToast }) {
                 >
                   <div style={{ width: "100%", aspectRatio: "16/9", background: "#f8fafc", overflow: "hidden" }}>
                     <img
-                      src={sl.imageUrl}
+                      src={optimizeImageUrl(sl.imageUrl, { width: 640 })}
                       alt={sl.captionHi || "Slide"}
                       style={{ width: "100%", height: "100%", objectFit: sl.fitMode === "contain" ? "contain" : "cover", display: "block" }}
                     />
@@ -3190,7 +3200,7 @@ function MemberForm({ member, state, session, run, onClose, showToast }) {
         </div>
         <Area name="messageHi" defaultValue={cur.messageHi} placeholder="संदेश हिंदी" />
         <Area name="messageEn" defaultValue={cur.messageEn} placeholder="Message" />
-        <label>फोटो {photoUrl && <img src={photoUrl} alt="" style={{ width: 48, height: 48, objectFit: "cover" }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setPhotoUrl(await uploadFile(f, session)); showToast("फोटो तैयार"); } }} /></label>
+        <label>फोटो {photoUrl && <img src={photoUrl} alt="" style={{ width: 48, height: 48, objectFit: "cover" }} />}<input type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { setPhotoUrl(await uploadFile(f, session, { folder: "upbms/members" })); showToast("फोटो तैयार"); } }} /></label>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button className="btn btn-accent">सेव</button>
@@ -3527,7 +3537,7 @@ function Circulars({ state, run, session, showToast, saveSettings }) {
                     if (!f) return;
                     setUploading(true);
                     try {
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/circulars" });
                       setFile({ url, type: f.type === "application/pdf" ? "pdf" : "image", name: f.name });
                       showToast(t(lang, "फाइल तैयार है", "File is ready"));
                     } catch (err) {
@@ -3725,7 +3735,7 @@ function Circulars({ state, run, session, showToast, saveSettings }) {
                         if (!f) return;
                         setEditUploading(true);
                         try {
-                          const url = await uploadFile(f, session);
+                          const url = await uploadFile(f, session, { folder: "upbms/circulars" });
                           setEditFile({ url, type: f.type === "application/pdf" ? "pdf" : "image", name: f.name });
                           showToast(t(lang, "नई फाइल तैयार है", "New file is ready"));
                         } catch (err) {
@@ -4521,7 +4531,7 @@ function Portals({ state, run, session, showToast, saveSettings }) {
                     if (!f) return;
                     setUploading(true);
                     try {
-                      const url = await uploadFile(f, session);
+                      const url = await uploadFile(f, session, { folder: "upbms/portals" });
                       setImageUrl(url);
                       showToast(t(lang, "पोर्टल इमेज तैयार है", "Portal image is ready"));
                     } catch (err) {
@@ -4840,7 +4850,7 @@ function Portals({ state, run, session, showToast, saveSettings }) {
                         if (!f) return;
                         setEditUploading(true);
                         try {
-                          const url = await uploadFile(f, session);
+                          const url = await uploadFile(f, session, { folder: "upbms/portals" });
                           setEditImageUrl(url);
                           showToast(t(lang, "नई इमेज तैयार है", "New image is ready"));
                         } catch (err) {
@@ -5512,7 +5522,7 @@ function GrievanceNews({ state, saveSettings, run, session, showToast }) {
                       if (!f) return;
                       setUploading(true);
                       try {
-                        const url = await uploadFile(f, session);
+                        const url = await uploadFile(f, session, { folder: "upbms/news" });
                         setNewsImageUrl(url);
                         showToast(t(lang, "समाचार फोटो तैयार है", "Photo uploaded"));
                       } catch (err) {
@@ -5697,7 +5707,7 @@ function GrievanceNews({ state, saveSettings, run, session, showToast }) {
                         if (!f) return;
                         setEditUploading(true);
                         try {
-                          const url = await uploadFile(f, session);
+                          const url = await uploadFile(f, session, { folder: "upbms/news" });
                           setEditImageUrl(url);
                           showToast(t(lang, "नई फोटो तैयार है", "New photo ready"));
                         } catch (err) {
@@ -5974,7 +5984,7 @@ function Branding({ state, saveSettings, session, showToast, persistSession, ref
                       if (!f) return;
                       setUploading(true);
                       try {
-                        const url = await uploadFile(f, session);
+                        const url = await uploadFile(f, session, { folder: "upbms/branding" });
                         setLogoUrl(url);
                         showToast(t(lang, "लोगो इमेज तैयार है", "Logo uploaded"));
                       } catch (err) {
@@ -6508,5 +6518,223 @@ function Branding({ state, saveSettings, session, showToast, persistSession, ref
         </button>
       </div>
     </form>
+  );
+}
+
+function VerifyLogs({ state, session, run }) {
+  const { lang } = usePortal();
+  const [q, setQ] = useState("");
+  const [filterType, setFilterType] = useState("all");
+  const [liveData, setLiveData] = useState(null);
+  const [loadingLive, setLoadingLive] = useState(false);
+
+  const logs = liveData ? liveData.logs : (state.verifyLogs || []);
+  const countMap = liveData ? liveData.countMap : {};
+
+  async function refresh() {
+    setLoadingLive(true);
+    try {
+      const data = await api("/api/verify-logs", { session });
+      setLiveData(data);
+    } catch (e) {
+      /* silent */
+    } finally {
+      setLoadingLive(false);
+    }
+  }
+
+  async function clearAll() {
+    if (!window.confirm(t(lang, "सभी सत्यापन रिकॉर्ड मिटाएं? यह वापस नहीं होगा।", "Delete all verification records? This cannot be undone."))) return;
+    await run("/api/verify-logs/clear", { method: "POST" }, t(lang, "सत्यापन लॉग मिटाए गए।", "Verification logs cleared."));
+    setLiveData(null);
+  }
+
+  const filtered = logs.filter((l) => {
+    const matchQ = !q || [l.memberCode, l.memberNameHi, l.memberNameEn, l.query, l.district, l.ip]
+      .some((v) => String(v || "").toLowerCase().includes(q.toLowerCase()));
+    const matchType = filterType === "all" || l.scanType === filterType;
+    return matchQ && matchType;
+  });
+
+  // Aggregated per-member stats
+  const memberStats = {};
+  for (const l of logs) {
+    if (!l.memberCode) continue;
+    if (!memberStats[l.memberCode]) {
+      memberStats[l.memberCode] = {
+        memberCode: l.memberCode,
+        nameHi: l.memberNameHi,
+        nameEn: l.memberNameEn,
+        district: l.district,
+        total: 0, qr: 0, manual: 0, lastAt: l.timestamp
+      };
+    }
+    memberStats[l.memberCode].total++;
+    if (l.scanType === "qr_scan") memberStats[l.memberCode].qr++;
+    else memberStats[l.memberCode].manual++;
+    if (l.timestamp > memberStats[l.memberCode].lastAt) memberStats[l.memberCode].lastAt = l.timestamp;
+  }
+  const statRows = Object.values(memberStats).sort((a, b) => b.total - a.total);
+
+  const totalQr = logs.filter((l) => l.scanType === "qr_scan").length;
+  const totalManual = logs.filter((l) => l.scanType === "manual").length;
+  const totalNotFound = logs.filter((l) => l.status === "not_found").length;
+
+  return (
+    <div>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 900, color: "#0a2252" }}>
+            🔍 {t(lang, "सदस्यता सत्यापन रिकॉर्ड", "Membership Verification Records")}
+          </h2>
+          <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+            {t(lang, "प्रत्येक QR स्कैन या मैन्युअल सत्यापन का स्वचालित रिकॉर्ड।", "Auto-logged record of every QR scan or manual verification.")}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-primary btn-sm" onClick={refresh} disabled={loadingLive}>
+            {loadingLive ? "⏳" : "🔄"} {t(lang, "ताज़ा करें", "Refresh")}
+          </button>
+          <button className="btn btn-danger btn-sm" onClick={clearAll}>
+            🗑️ {t(lang, "सभी मिटाएं", "Clear All")}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Summary Cards ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+        {[
+          { icon: "📊", label: t(lang, "कुल सत्यापन", "Total Verifications"), val: logs.length, color: "#0a2252" },
+          { icon: "📱", label: t(lang, "QR स्कैन", "QR Scans"), val: totalQr, color: "#16a34a" },
+          { icon: "⌨️", label: t(lang, "मैन्युअल खोज", "Manual Search"), val: totalManual, color: "#ea580c" },
+          { icon: "❌", label: t(lang, "नहीं मिला", "Not Found"), val: totalNotFound, color: "#dc2626" },
+          { icon: "👥", label: t(lang, "अनूठे सदस्य", "Unique Members"), val: statRows.length, color: "#7c3aed" }
+        ].map((c, i) => (
+          <div key={i} style={{ background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 12, padding: "12px 16px", textAlign: "center" }}>
+            <div style={{ fontSize: 24, marginBottom: 4 }}>{c.icon}</div>
+            <div style={{ fontSize: "1.5rem", fontWeight: 900, color: c.color }}>{c.val}</div>
+            <div style={{ fontSize: "0.76rem", color: "#64748b", fontWeight: 700 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Per-Member Stats Table ── */}
+      {statRows.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: "1rem", fontWeight: 800, color: "#0a2252", marginBottom: 10 }}>
+            🏆 {t(lang, "सदस्य-वार सत्यापन गणना", "Per-Member Verification Count")}
+          </h3>
+          <div style={{ overflowX: "auto" }}>
+            <table className="admin-table" style={{ fontSize: "0.84rem" }}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>{t(lang, "सदस्य आईडी", "Member ID")}</th>
+                  <th>{t(lang, "नाम", "Name")}</th>
+                  <th>{t(lang, "जनपद", "District")}</th>
+                  <th style={{ textAlign: "center" }}>📱 QR</th>
+                  <th style={{ textAlign: "center" }}>⌨️ {t(lang, "मैन्युअल", "Manual")}</th>
+                  <th style={{ textAlign: "center" }}>📊 {t(lang, "कुल", "Total")}</th>
+                  <th>{t(lang, "अंतिम सत्यापन", "Last Verified")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statRows.map((r, i) => (
+                  <tr key={r.memberCode}>
+                    <td style={{ color: "#94a3b8", fontWeight: 700 }}>{i + 1}</td>
+                    <td><code style={{ background: "#f1f5f9", padding: "2px 6px", borderRadius: 5, fontSize: "0.82rem" }}>{r.memberCode}</code></td>
+                    <td style={{ fontWeight: 700 }}>{t(lang, r.nameHi, r.nameEn) || "—"}</td>
+                    <td>{localizeDual(r.district, lang) || "—"}</td>
+                    <td style={{ textAlign: "center", color: "#16a34a", fontWeight: 800 }}>{r.qr}</td>
+                    <td style={{ textAlign: "center", color: "#ea580c", fontWeight: 800 }}>{r.manual}</td>
+                    <td style={{ textAlign: "center", fontWeight: 900, color: "#0a2252" }}>{r.total}</td>
+                    <td style={{ fontSize: "0.78rem", color: "#64748b" }}>{r.lastAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Detailed Log ── */}
+      <div>
+        <h3 style={{ fontSize: "1rem", fontWeight: 800, color: "#0a2252", marginBottom: 10 }}>
+          📋 {t(lang, "विस्तृत सत्यापन लॉग", "Detailed Verification Log")}
+        </h3>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+          <input
+            className="form-control"
+            style={{ flex: 1, minWidth: 200, height: 38 }}
+            placeholder={t(lang, "सदस्य आईडी, नाम, IP से खोजें...", "Search by member ID, name, IP...")}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <select className="form-control" style={{ width: 180, height: 38 }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+            <option value="all">{t(lang, "सभी प्रकार", "All Types")}</option>
+            <option value="qr_scan">📱 {t(lang, "QR स्कैन", "QR Scan")}</option>
+            <option value="manual">⌨️ {t(lang, "मैन्युअल", "Manual")}</option>
+          </select>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
+            <p>{t(lang, "कोई सत्यापन रिकॉर्ड नहीं मिला।", "No verification records found.")}</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="admin-table" style={{ fontSize: "0.82rem" }}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>{t(lang, "प्रकार", "Type")}</th>
+                  <th>{t(lang, "समय", "Time")}</th>
+                  <th>{t(lang, "खोज क्वेरी", "Query")}</th>
+                  <th>{t(lang, "सदस्य आईडी", "Member ID")}</th>
+                  <th>{t(lang, "नाम", "Name")}</th>
+                  <th>{t(lang, "स्थिति", "Status")}</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((l, i) => (
+                  <tr key={l.id}>
+                    <td style={{ color: "#94a3b8" }}>{i + 1}</td>
+                    <td>
+                      <span style={{
+                        background: l.scanType === "qr_scan" ? "#dcfce7" : "#fef3c7",
+                        color: l.scanType === "qr_scan" ? "#15803d" : "#92400e",
+                        padding: "2px 8px", borderRadius: 99, fontWeight: 800, fontSize: "0.76rem"
+                      }}>
+                        {l.scanType === "qr_scan" ? "📱 QR" : "⌨️ Manual"}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: "0.78rem", color: "#64748b", whiteSpace: "nowrap" }}>{l.timestamp}</td>
+                    <td><code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>{l.query}</code></td>
+                    <td>{l.memberCode
+                      ? <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>{l.memberCode}</code>
+                      : <span style={{ color: "#dc2626" }}>—</span>}
+                    </td>
+                    <td style={{ fontWeight: 700 }}>{t(lang, l.memberNameHi, l.memberNameEn) || "—"}</td>
+                    <td>
+                      <span style={{
+                        background: l.status === "active" ? "#dcfce7" : l.status === "not_found" ? "#fee2e2" : "#fef3c7",
+                        color: l.status === "active" ? "#15803d" : l.status === "not_found" ? "#991b1b" : "#92400e",
+                        padding: "2px 8px", borderRadius: 99, fontWeight: 800, fontSize: "0.74rem"
+                      }}>
+                        {l.status === "active" ? "✅ Active" : l.status === "not_found" ? "❌ Not Found" : "⚠ " + l.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: "0.75rem", color: "#94a3b8", fontFamily: "monospace" }}>{l.ip}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

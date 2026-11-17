@@ -4,7 +4,8 @@ import { usePortal } from "./context";
 import { AdminPage } from "./pages/Admin";
 import {
   AboutPage, CircularsPage, DocumentsPage, DonatePage, GrievancePage,
-  HomePage, JoinPage, MembersPage, Modals, PortalsPage, VerifyPage
+  HomePage, JoinPage, MembersPage, Modals, PortalsPage, VerifyPage,
+  MembershipVerificationPage
 } from "./pages/Public";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
     circulars: <CircularsPage />,
     documents: <DocumentsPage />,
     idcard: <VerifyPage />,
+    verify: <MembershipVerificationPage />,
     portals: <PortalsPage />,
     grievance: <GrievancePage />,
     admin: <AdminPage />

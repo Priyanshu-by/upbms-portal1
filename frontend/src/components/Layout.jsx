@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { usePortal } from "../context";
 import { NAV_ICONS, SOCIAL, grievanceEnabled, t } from "../utils";
+import { optimizeImageUrl } from "../api";
 
 function Icon({ name }) {
   return <span dangerouslySetInnerHTML={{ __html: SOCIAL[name] || SOCIAL.link }} />;
@@ -26,13 +27,13 @@ export function Layout({ children }) {
     .sort((a, b) => (a.order || 99) - (b.order || 99));
   const ticker = lang === "en" ? (s.tickerNoticesEn || s.tickerNoticesHi || []) : (s.tickerNoticesHi || []);
   const socials = [
-    ["whatsappChannel", "whatsapp", "WA"],
-    ["whatsappGroup", "whatsapp", lang === "en" ? "Group" : "ग्रुप"],
-    ["facebook", "facebook", "FB"],
-    ["instagram", "instagram", "Insta"],
-    ["youtube", "youtube", "YT"],
-    ["twitter", "twitter", "X"],
-    ["telegram", "telegram", "TG"]
+    ["whatsappChannel", "whatsapp", "WhatsApp", "WA", t(lang, "व्हाट्सएप चैनल", "WhatsApp Channel")],
+    ["whatsappGroup", "whatsappGroup", lang === "en" ? "WA Group" : "WA ग्रुप", lang === "en" ? "Group" : "ग्रुप", t(lang, "व्हाट्सएप ग्रुप", "WhatsApp Group")],
+    ["facebook", "facebook", "Facebook", "FB", "Facebook"],
+    ["instagram", "instagram", "Instagram", "Insta", "Instagram"],
+    ["youtube", "youtube", "YouTube", "YT", "YouTube"],
+    ["twitter", "twitter", "X", "X", "X (Twitter)"],
+    ["telegram", "telegram", "Telegram", "TG", "Telegram"]
   ];
   const member = session?.member;
 
@@ -62,8 +63,21 @@ export function Layout({ children }) {
           </div>
           <div className="top-right-actions">
             <div className="social-icon-strip">
-              {socials.filter(([key]) => sl[key]).map(([key, icon, label]) => (
-                <a key={key} href={sl[key]} target="_blank" rel="noreferrer" className="soc-icon-btn"><Icon name={icon} /><span>{label}</span></a>
+              {socials.filter(([key]) => sl[key]).map(([key, icon, fullLabel, shortLabel, title]) => (
+                <a
+                  key={key}
+                  href={sl[key]}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`soc-icon-btn soc-${key}`}
+                  title={title || fullLabel}
+                >
+                  <span className="soc-brand-icon"><Icon name={icon} /></span>
+                  <span className="soc-label">
+                    <span className="soc-label-full">{fullLabel}</span>
+                    <span className="soc-label-short">{shortLabel}</span>
+                  </span>
+                </a>
               ))}
             </div>
             <button className="btn-lang" onClick={() => setLang(lang === "hi" ? "en" : "hi")}>🌐 {lang === "hi" ? "Switch to English" : "हिंदी में देखें"}</button>
@@ -199,9 +213,16 @@ export function HeroSlider() {
   if (!slides.length) return null;
   const sl = slides[idx % slides.length];
   const caption = t(lang, sl.captionHi, sl.captionEn);
+  const bannerSrc = optimizeImageUrl(sl.imageUrl, { width: 1600, quality: "auto", format: "auto" });
   return (
     <div className="hero-16x9-stage">
-      <img src={sl.imageUrl} alt={caption || "UPBMS"} className={`hero-16x9-img ${sl.fitMode === "contain" ? "fit-contain" : ""}`} />
+      <img
+        src={bannerSrc}
+        alt={caption || "UPBMS"}
+        className={`hero-16x9-img ${sl.fitMode === "contain" ? "fit-contain" : ""}`}
+        loading={idx === 0 ? "eager" : "lazy"}
+        decoding="async"
+      />
       {caption && <div className="hero-caption-pill">📸 {caption}</div>}
       {slides.length > 1 && (
         <>

@@ -13,10 +13,31 @@ function readSession() {
   }
 }
 
+function getInitialRouteInfo() {
+  if (typeof window === "undefined") return { route: "home", verifyId: "" };
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const v = sp.get("verify") || sp.get("v") || sp.get("id");
+    const r = sp.get("route");
+    if (v) return { route: "verify", verifyId: v };
+    if (r) return { route: r, verifyId: "" };
+    const pathname = window.location.pathname.replace(/^\/+/, "");
+    if (pathname.startsWith("verify")) {
+      const parts = pathname.split("/");
+      return { route: "verify", verifyId: parts[1] || "" };
+    }
+  } catch {
+    /* fallback */
+  }
+  return { route: "home", verifyId: "" };
+}
+
 export function PortalProvider({ children }) {
+  const initialRouteInfo = useMemo(() => getInitialRouteInfo(), []);
   const [state, setState] = useState(null);
   const [lang, setLang] = useState("hi");
-  const [route, setRoute] = useState("home");
+  const [route, setRoute] = useState(initialRouteInfo.route);
+  const [verifyId, setVerifyId] = useState(initialRouteInfo.verifyId);
   const [session, setSession] = useState(readSession);
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState(null);
@@ -77,11 +98,16 @@ export function PortalProvider({ children }) {
   const userLevel = session?.level || (session?.isAdmin ? 1 : (session?.member?.level || (session?.member ? 3 : 4)));
   const isAdmin = userLevel === 1 || userLevel === 2;
   const isSuperAdmin = userLevel === 1;
-  const canAccessMembers = userLevel <= 3;
+  const canAccessMembers = true;
   const canAccessAdmin = userLevel <= 2;
   const canAccessUserManagement = userLevel === 1;
 
   const logout = useCallback(async () => {
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* silent */
+    }
     persistSession(null);
     setModal(null);
     setRoute("home");
@@ -94,11 +120,11 @@ export function PortalProvider({ children }) {
   }, [persistSession, setModal, setRoute, refresh, showToast, lang]);
 
   const value = useMemo(() => ({
-    state, setState, lang, setLang, route, setRoute, session, persistSession, logout,
+    state, setState, lang, setLang, route, setRoute, verifyId, setVerifyId, session, persistSession, logout,
     toast, showToast, modal, setModal, loading, error, refresh, signed, recordSignedUsage,
     userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
   }), [
-    state, lang, route, session, toast, modal, loading, error, refresh, signed, recordSignedUsage,
+    state, lang, route, verifyId, session, toast, modal, loading, error, refresh, signed, recordSignedUsage,
     showToast, persistSession, logout, userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
   ]);
 

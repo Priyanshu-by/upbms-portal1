@@ -135,7 +135,8 @@ window.UPBMSPrint = (function () {
     const bgOp = Number(bgCfg.bgOpacity ?? 0.15);
 
     const photo = member.photoUrl || initialsAvatarSvg(member.nameEn || member.nameHi);
-    const verifyPayload = `UPBMS|${member.memberCode}|${member.nameEn}|${member.status}`;
+    const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "";
+    const verifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}` : `UPBMS|${member.memberCode}|${member.nameEn}|${member.status}`;
     const qrFront = generateQrSvg(verifyPayload, 44, "#0a2252");
     const qrBack = generateQrSvg(verifyPayload, 84, "#0a2252");
 
@@ -262,7 +263,9 @@ window.UPBMSPrint = (function () {
 
     const tplTxt = settings.letterTemplateText || {};
     const photo = member.photoUrl || initialsAvatarSvg(member.nameEn || member.nameHi);
-    const qrSvg = generateQrSvg(`UPBMS-LETTER|${member.memberCode}|${member.joinedDate}`, 78, headerColor);
+    const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "";
+    const letterVerifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}` : `UPBMS-LETTER|${member.memberCode}|${member.joinedDate}`;
+    const qrSvg = generateQrSvg(letterVerifyPayload, 78, headerColor);
 
     const nameDisp = isEn ? (member.nameEn || member.nameHi) : (member.nameHi || member.nameEn);
     const fatherDisp = isEn ? (member.fatherNameEn || member.fatherName || "—") : (member.fatherName || "—");

@@ -1,9 +1,22 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const dotenv = require("dotenv");
+
+// Load .env from backend directory, then workspace root
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
+dotenv.config({ path: path.join(__dirname, "..", "..", ".env") });
+
 const express = require("express");
 const cors = require("cors");
 const { createSeedDatabase } = require("../data/seed");
 const { connectMongo, loadDb, persist } = require("./db");
+const { uploadBuffer, uploadDataUrl, deleteFromCloudinary, isCloudinaryConfigured } = require("./services/cloudinaryService");
+const { uploadSingle } = require("./middleware/uploadMiddleware");
+const { verifyGoogleIdToken, isGoogleAuthConfigured } = require("./services/googleAuthService");
+const { sendOtpEmail, verifyOtp, isGmailConfigured } = require("./services/emailOtpService");
+const cookieParser = require("cookie-parser");
+const authRoutes = require("../routes/authRoutes");
+const { connectDB: initAuthDB } = require("../config/db");
 
 const PORT = Number(process.env.PORT) || 5000;
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
@@ -218,6 +231,7 @@ function buildBootstrap(auth) {
     grievances: [...db.grievances].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
     news: [...db.news].sort((a, b) => String(b.date).localeCompare(String(a.date))),
     accessLogs: auth.isAdmin ? [...db.accessLogs] : [],
+    verifyLogs: auth.isAdmin ? [...(db.verifyLogs || [])] : [],
     meta: db.meta,
     stats: computeStats()
   };
@@ -247,9 +261,11 @@ function csvResponse(res, filename, headers, rows) {
 }
 
 const app = express();
-app.use(cors({ origin: true, allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Pin", "X-Member-Id", "X-Member-Pass"] }));
+app.use(cors({ origin: true, credentials: true, allowedHeaders: ["Content-Type", "Authorization", "X-Admin-Pin", "X-Member-Id", "X-Member-Pass"] }));
+app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
 app.use("/uploads", express.static(UPLOADS_DIR));
+app.use("/api/auth", authRoutes);
 
 app.use((req, res, next) => {
   req.auth = resolveRequestAuth(req);
@@ -363,6 +379,261 @@ app.post("/api/member/login", async (req, res) => {
     member: sanitizeMemberPublic(found),
     level: userLevel,
     isAdmin: userLevel === 1 || userLevel === 2,
+    receipts
+  });
+});
+
+/* ── GOOGLE & EMAIL AUTHENTICATION SYSTEM ── */
+
+app.get("/api/auth/config", (_req, res) => {
+  res.json({
+    ok: true,
+    googleClientId: process.env.GOOGLE_CLIENT_ID || "",
+    isGoogleAuthConfigured: isGoogleAuthConfigured(),
+    isGmailConfigured: isGmailConfigured()
+  });
+});
+
+// Google One-Click / OAuth 2.0 Sign In
+app.post("/api/auth/google", async (req, res) => {
+  const { credential } = req.body || {};
+  if (!credential) {
+    return res.status(400).json({ ok: false, error: "Google credential token required" });
+  }
+
+  try {
+    const profile = await verifyGoogleIdToken(credential);
+    const email = profile.email.toLowerCase();
+
+    // Search existing member by googleId or email
+    let found = db.members.find(
+      (m) =>
+        (m.googleId && m.googleId === profile.googleId) ||
+        (m.email && m.email.toLowerCase() === email)
+    );
+
+    if (found) {
+      // Update verified status and googleId
+      found.googleId = profile.googleId;
+      found.isEmailVerified = true;
+      found.emailVerifiedAt = new Date().toISOString();
+      if (!found.photoUrl && profile.picture) {
+        found.photoUrl = profile.picture;
+      }
+    } else {
+      // Auto-register new verified member record in MongoDB
+      const newMemberCode = generateNextMemberCode(false);
+      found = {
+        id: "mem-" + Date.now(),
+        memberCode: newMemberCode,
+        username: email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20),
+        nameHi: profile.name,
+        nameEn: profile.name,
+        fatherName: "—",
+        fatherNameEn: "—",
+        email: email,
+        mobile: "",
+        googleId: profile.googleId,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date().toISOString(),
+        photoUrl: profile.picture || "",
+        password: "UPBMS@" + Math.floor(1000 + Math.random() * 9000),
+        level: 4, // Visitor / verified member (upgradeable by admin)
+        role: "member",
+        status: "active",
+        joinedDate: new Date().toISOString().slice(0, 10),
+        feePaid: 0,
+        district: "लखनऊ (Lucknow)",
+        bankName: "State Bank of India (SBI)"
+      };
+      db.members.push(found);
+    }
+
+    const receipts = db.payments.filter(
+      (p) => p.memberId === found.id || p.memberCode === found.memberCode || (found.mobile && p.mobile === found.mobile)
+    );
+    const userLevel = Number(found.level) || (found.isCoreMember ? 2 : 3);
+
+    appendAccessLogEntry(req, {
+      actorType: userLevel <= 2 ? "admin" : "member",
+      memberId: found.id,
+      memberCode: found.memberCode,
+      memberNameHi: found.nameHi,
+      memberNameEn: found.nameEn,
+      designationHi: found.designationHi || "Google Verified User",
+      designationEn: found.designationEn || "Google Verified User",
+      mobile: found.mobile || email,
+      district: found.district || "",
+      actionType: "google_login",
+      actionLabelHi: `Google खाते द्वारा प्रमाणित लॉगिन (Level ${userLevel})`,
+      actionLabelEn: `Google Authenticated Login (Level ${userLevel})`,
+      targetTitleHi: "Google OAuth 2.0 सत्यापन",
+      targetTitleEn: "Google OAuth 2.0 Verification",
+      signatoriesUsedHi: "ईमेल सत्यापित",
+      signatoriesUsedEn: "Email Verified via Google"
+    });
+
+    await saveDb();
+
+    return res.json({
+      ok: true,
+      message: "Google login successful",
+      member: sanitizeMemberPublic(found),
+      level: userLevel,
+      isAdmin: userLevel === 1 || userLevel === 2,
+      memberId: found.id,
+      memberPass: found.password || "123456",
+      receipts
+    });
+  } catch (err) {
+    console.error("Google authentication error:", err.message);
+    return res.status(401).json({ ok: false, error: err.message || "Google authentication failed" });
+  }
+});
+
+// Send 6-digit OTP to Member's Email
+app.post("/api/auth/send-otp", async (req, res) => {
+  const query = String(req.body.query || req.body.email || "").trim().toLowerCase();
+  if (!query) {
+    return res.status(400).json({ ok: false, error: "कृपया सदस्य आईडी, मोबाइल या ईमेल दर्ज करें / Member ID or Email required" });
+  }
+
+  // Lookup member in MongoDB
+  let found = db.members.find(
+    (m) =>
+      String(m.memberCode || "").toLowerCase() === query ||
+      String(m.username || "").toLowerCase() === query ||
+      String(m.mobile || "").toLowerCase() === query ||
+      (m.email && m.email.toLowerCase() === query)
+  );
+
+  let targetEmail = "";
+  if (found && found.email) {
+    targetEmail = found.email.trim().toLowerCase();
+  } else if (query.includes("@")) {
+    targetEmail = query;
+  }
+
+  if (!targetEmail) {
+    return res.status(404).json({
+      ok: false,
+      error: "इस सदस्य आईडी पर कोई ईमेल पंजीकृत नहीं है। कृपया अपना पंजीकृत ईमेल दर्ज करें।"
+    });
+  }
+
+  try {
+    const result = await sendOtpEmail(targetEmail, {
+      memberName: found ? (found.nameHi || found.nameEn) : "बैंक मित्र सदस्य"
+    });
+
+    // Mask email for display: e.g. "p***u@gmail.com"
+    const parts = targetEmail.split("@");
+    const namePart = parts[0];
+    const maskedName = namePart.length > 2
+      ? namePart[0] + "***" + namePart[namePart.length - 1]
+      : namePart[0] + "***";
+    const maskedEmail = `${maskedName}@${parts[1]}`;
+
+    return res.json({
+      ok: true,
+      message: `सत्यापन कोड (OTP) ${maskedEmail} पर भेज दिया गया है।`,
+      email: targetEmail,
+      emailMasked: maskedEmail,
+      devMode: result.devMode,
+      devOtp: result.devMode ? result.otp : undefined
+    });
+  } catch (err) {
+    console.error("Error sending OTP email:", err.message);
+    return res.status(500).json({ ok: false, error: err.message || "Unable to send verification email" });
+  }
+});
+
+// Verify 6-digit OTP & Complete Login
+app.post("/api/auth/verify-otp", async (req, res) => {
+  const email = String(req.body.email || req.body.query || "").trim().toLowerCase();
+  const otp = String(req.body.otp || "").trim();
+
+  if (!email || !otp) {
+    return res.status(400).json({ ok: false, error: "ईमेल और 6-अंकीय ओटीपी आवश्यक है / Email and 6-digit OTP required" });
+  }
+
+  const check = verifyOtp(email, otp);
+  if (!check.ok) {
+    return res.status(400).json({ ok: false, error: check.error });
+  }
+
+  // Lookup member in MongoDB
+  let found = db.members.find(
+    (m) =>
+      (m.email && m.email.toLowerCase() === email) ||
+      String(m.memberCode || "").toLowerCase() === email ||
+      String(m.username || "").toLowerCase() === email ||
+      String(m.mobile || "").toLowerCase() === email
+  );
+
+  if (!found) {
+    // If not found, create registered visitor/member
+    const newMemberCode = generateNextMemberCode(false);
+    found = {
+      id: "mem-" + Date.now(),
+      memberCode: newMemberCode,
+      username: email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 20),
+      nameHi: email.split("@")[0],
+      nameEn: email.split("@")[0],
+      fatherName: "—",
+      fatherNameEn: "—",
+      email: email,
+      isEmailVerified: true,
+      emailVerifiedAt: new Date().toISOString(),
+      password: "UPBMS@" + Math.floor(1000 + Math.random() * 9000),
+      level: 4,
+      role: "member",
+      status: "active",
+      joinedDate: new Date().toISOString().slice(0, 10),
+      feePaid: 0,
+      district: "लखनऊ (Lucknow)",
+      bankName: "State Bank of India (SBI)"
+    };
+    db.members.push(found);
+  } else {
+    found.isEmailVerified = true;
+    found.emailVerifiedAt = new Date().toISOString();
+  }
+
+  const receipts = db.payments.filter(
+    (p) => p.memberId === found.id || p.memberCode === found.memberCode || (found.mobile && p.mobile === found.mobile)
+  );
+  const userLevel = Number(found.level) || (found.isCoreMember ? 2 : 3);
+
+  appendAccessLogEntry(req, {
+    actorType: userLevel <= 2 ? "admin" : "member",
+    memberId: found.id,
+    memberCode: found.memberCode,
+    memberNameHi: found.nameHi,
+    memberNameEn: found.nameEn,
+    designationHi: found.designationHi || "Email Verified User",
+    designationEn: found.designationEn || "Email Verified User",
+    mobile: found.mobile || email,
+    district: found.district || "",
+    actionType: "email_otp_login",
+    actionLabelHi: `ईमेल OTP द्वारा सत्यापित लॉगिन (Level ${userLevel})`,
+    actionLabelEn: `Email OTP Verified Login (Level ${userLevel})`,
+    targetTitleHi: "ईमेल ओटीपी सत्यापन",
+    targetTitleEn: "Email OTP Verification",
+    signatoriesUsedHi: "ईमेल कोड सत्यापित",
+    signatoriesUsedEn: "Email OTP Code Verified"
+  });
+
+  await saveDb();
+
+  return res.json({
+    ok: true,
+    message: "Email verification successful",
+    member: sanitizeMemberPublic(found),
+    level: userLevel,
+    isAdmin: userLevel === 1 || userLevel === 2,
+    memberId: found.id,
+    memberPass: found.password || "123456",
     receipts
   });
 });
@@ -501,6 +772,15 @@ app.put("/api/settings", requireAdmin, async (req, res) => {
   const body = req.body || {};
   const currentPin = db.settings.adminPin || "1234";
   const prev = db.settings;
+
+  // Clean up replaced Cloudinary images
+  if (body.sealImageUrl && prev.sealImageUrl && body.sealImageUrl !== prev.sealImageUrl && prev.sealPublicId) {
+    deleteFromCloudinary(prev.sealPublicId).catch(() => {});
+  }
+  if (body.logoUrl && prev.logoUrl && body.logoUrl !== prev.logoUrl && prev.logoPublicId) {
+    deleteFromCloudinary(prev.logoPublicId).catch(() => {});
+  }
+
   const mergedBg = body.templateBackgrounds
     ? {
         letter: { ...(prev.templateBackgrounds?.letter || {}), ...(body.templateBackgrounds.letter || {}) },
@@ -541,36 +821,126 @@ app.put("/api/meta", requireAdmin, async (req, res) => {
   res.json({ ok: true, meta: db.meta });
 });
 
+// Centralized Cloudinary Upload Endpoint (supports multipart/form-data and base64 JSON)
 app.post("/api/upload", (req, res) => {
-  const { filename, dataUrl } = req.body || {};
-  if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
-    return res.status(400).json({ ok: false, error: "Valid file dataUrl required" });
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    uploadSingle(req, res, async (err) => {
+      if (err) {
+        return res.status(400).json({ ok: false, error: err.message });
+      }
+      try {
+        if (!req.file) {
+          return res.status(400).json({ ok: false, error: "No file uploaded" });
+        }
+        const folder = req.body?.folder || "upbms/general";
+        const result = await uploadBuffer(req.file.buffer, {
+          filename: req.file.originalname,
+          mime: req.file.mimetype,
+          folder
+        });
+        return res.json({
+          ok: true,
+          url: result.secure_url,
+          secure_url: result.secure_url,
+          public_id: result.public_id,
+          size: result.bytes,
+          format: result.format,
+          isCloudinary: !result.isLocalFallback
+        });
+      } catch (uploadErr) {
+        console.error("Cloudinary multipart upload error:", uploadErr.message);
+        return res.status(400).json({ ok: false, error: uploadErr.message || "Upload failed" });
+      }
+    });
+  } else {
+    // Base64 dataUrl (JSON)
+    (async () => {
+      try {
+        const { filename, dataUrl, folder = "upbms/general" } = req.body || {};
+        if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
+          return res.status(400).json({ ok: false, error: "Valid file dataUrl required (must start with data:)" });
+        }
+        const result = await uploadDataUrl(dataUrl, {
+          filename: filename || "upload",
+          folder
+        });
+        return res.json({
+          ok: true,
+          url: result.secure_url,
+          secure_url: result.secure_url,
+          public_id: result.public_id,
+          size: result.bytes,
+          format: result.format,
+          isCloudinary: !result.isLocalFallback
+        });
+      } catch (err) {
+        console.error("Cloudinary base64 upload error:", err.message);
+        return res.status(400).json({ ok: false, error: err.message || "Upload failed" });
+      }
+    })();
   }
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) return res.status(400).json({ ok: false, error: "Malformed base64 dataUrl" });
-  const mime = match[1];
-  const buffer = Buffer.from(match[2], "base64");
-  const extFromName = path.extname(filename || "").toLowerCase();
-  const allowedExts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".pdf"];
-  let ext = allowedExts.includes(extFromName) ? extFromName : ".png";
-  if (mime.includes("pdf")) ext = ".pdf";
-  else if (mime.includes("jpeg") || mime.includes("jpg")) ext = ".jpg";
-  else if (mime.includes("svg")) ext = ".svg";
-  else if (mime.includes("webp")) ext = ".webp";
-  const safeBase = path.basename(filename || "upload", path.extname(filename || "")).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
-  const finalName = `${Date.now()}-${safeBase}${ext}`;
-  fs.writeFileSync(path.join(UPLOADS_DIR, finalName), buffer);
-  res.json({ ok: true, url: `/uploads/${finalName}`, size: buffer.length });
 });
 
-app.get("/api/verify/:query", (req, res) => {
-  const q = decodeURIComponent(req.params.query).trim().toLowerCase();
-  const found = db.members.find(
+// Admin-protected Cloudinary asset deletion
+app.post("/api/upload/delete", requireAdmin, async (req, res) => {
+  const { public_id, resource_type = "image" } = req.body || {};
+  if (!public_id) {
+    return res.status(400).json({ ok: false, error: "public_id is required" });
+  }
+  const deleted = await deleteFromCloudinary(public_id, resource_type);
+  res.json({ ok: true, deleted, message: deleted ? "Asset deleted from Cloudinary" : "Asset deletion skipped" });
+});
+
+// Cloudinary connection status
+app.get("/api/upload/status", (_req, res) => {
+  res.json({
+    ok: true,
+    isCloudinaryConfigured: isCloudinaryConfigured()
+  });
+});
+
+function lookupMemberForVerification(q) {
+  if (!q) return null;
+  const target = String(q).trim().toLowerCase();
+  return db.members.find(
     (m) =>
-      String(m.memberCode || "").toLowerCase() === q ||
-      String(m.mobile || "").toLowerCase() === q ||
-      String(m.koCode || "").toLowerCase() === q
-  );
+      String(m.memberCode || "").toLowerCase() === target ||
+      String(m.mobile || "").toLowerCase() === target ||
+      String(m.koCode || "").toLowerCase() === target ||
+      String(m.id || "").toLowerCase() === target
+  ) || null;
+}
+
+function appendVerifyLog(req, found, query) {
+  db.verifyLogs = db.verifyLogs || [];
+  const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+  const ua = String(req.headers["user-agent"] || "").slice(0, 120);
+  const isQr = ua.toLowerCase().includes("mobile") || ua.toLowerCase().includes("android") || ua.toLowerCase().includes("iphone") || ua.toLowerCase().includes("ios") || ua.toLowerCase().includes("zxing") || ua.toLowerCase().includes("qr");
+  const entry = {
+    id: "vlog-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+    timestamp: formatIstTimestamp(),
+    query: query,
+    memberCode: found ? found.memberCode : null,
+    memberNameHi: found ? found.nameHi : null,
+    memberNameEn: found ? found.nameEn : null,
+    district: found ? found.district : null,
+    status: found ? found.status : "not_found",
+    scanType: isQr ? "qr_scan" : "manual",
+    ip: ip || "—",
+    userAgent: ua || "—"
+  };
+  db.verifyLogs.unshift(entry);
+  if (db.verifyLogs.length > 2000) db.verifyLogs = db.verifyLogs.slice(0, 2000);
+  saveDb();
+  return entry;
+}
+
+app.get("/api/verify", (req, res) => {
+  const q = String(req.query.id || req.query.query || req.query.q || req.query.code || "").trim();
+  if (!q) return res.status(400).json({ ok: false, error: "Member ID or mobile number required" });
+  const found = lookupMemberForVerification(q);
+  appendVerifyLog(req, found, q);
   if (!found) {
     return res.status(404).json({ ok: false, error: "इस सदस्य संख्या / मोबाइल से कोई रिकॉर्ड नहीं मिला। / Record not found." });
   }
@@ -578,6 +948,40 @@ app.get("/api/verify/:query", (req, res) => {
     (p) => p.memberId === found.id || p.memberCode === found.memberCode || p.mobile === found.mobile
   );
   res.json({ ok: true, member: sanitizeMemberPublic(found), receipts });
+});
+
+app.get("/api/verify/:query", (req, res) => {
+  const q = decodeURIComponent(req.params.query).trim();
+  const found = lookupMemberForVerification(q);
+  appendVerifyLog(req, found, q);
+  if (!found) {
+    return res.status(404).json({ ok: false, error: "इस सदस्य संख्या / मोबाइल से कोई रिकॉर्ड नहीं मिला। / Record not found." });
+  }
+  const receipts = db.payments.filter(
+    (p) => p.memberId === found.id || p.memberCode === found.memberCode || p.mobile === found.mobile
+  );
+  res.json({ ok: true, member: sanitizeMemberPublic(found), receipts });
+});
+
+/* GET /api/verify-logs — Admin only: list all QR/manual verification events */
+app.get("/api/verify-logs", requireAdmin, (req, res) => {
+  db.verifyLogs = db.verifyLogs || [];
+  const logs = [...db.verifyLogs];
+  // Build per-member scan counts
+  const countMap = {};
+  for (const l of logs) {
+    if (l.memberCode) {
+      countMap[l.memberCode] = (countMap[l.memberCode] || 0) + 1;
+    }
+  }
+  res.json({ ok: true, logs, countMap, total: logs.length });
+});
+
+/* POST /api/verify-logs/clear — Admin only: wipe all verify logs */
+app.post("/api/verify-logs/clear", requireAdmin, async (_req, res) => {
+  db.verifyLogs = [];
+  await saveDb();
+  res.json({ ok: true });
 });
 
 app.post("/api/members", async (req, res) => {
@@ -658,6 +1062,12 @@ app.put("/api/members/:id", requireAdmin, async (req, res) => {
   if (idx === -1) return res.status(404).json({ ok: false, error: "Member not found" });
   const body = req.body || {};
   const prev = db.members[idx];
+
+  // If member photo was replaced with a new one, delete old Cloudinary image
+  if (body.photoUrl && prev.photoUrl && body.photoUrl !== prev.photoUrl && prev.photoPublicId) {
+    deleteFromCloudinary(prev.photoPublicId).catch(() => {});
+  }
+
   const nextIsCore = body.isCoreMember !== undefined ? Boolean(body.isCoreMember) : prev.isCoreMember;
   let memberCode = body.memberCode || prev.memberCode;
   if (!prev.isCoreMember && nextIsCore && String(memberCode).startsWith("UPBMS-2026-")) {
@@ -666,6 +1076,7 @@ app.put("/api/members/:id", requireAdmin, async (req, res) => {
   const updated = {
     ...prev,
     ...body,
+    photoPublicId: body.photoPublicId !== undefined ? body.photoPublicId : (body.photoUrl && body.photoUrl !== prev.photoUrl ? null : prev.photoPublicId),
     websiteUrl: body.websiteUrl !== undefined ? String(body.websiteUrl || "").trim() : (prev.websiteUrl || prev.website || ""),
     password: body.password ? String(body.password).trim() : (prev.password || "123456"),
     isCoreMember: nextIsCore,
@@ -699,6 +1110,10 @@ app.delete("/api/members/:id", requireAdmin, async (req, res) => {
   if (db.members[idx].level === 1) {
     return res.status(400).json({ ok: false, error: "Level 1 सुपर एडमिन खाता हटाया नहीं जा सकता। / Level 1 Super Admin account cannot be deleted." });
   }
+  // Delete photo from Cloudinary if public_id exists
+  if (db.members[idx].photoPublicId) {
+    deleteFromCloudinary(db.members[idx].photoPublicId).catch(() => {});
+  }
   db.members.splice(idx, 1);
   await saveDb();
   res.json({ ok: true });
@@ -726,6 +1141,16 @@ for (const [route, cfg] of Object.entries(collectionsMap)) {
   app.put(`/api/${route}/:id`, requireAdmin, async (req, res) => {
     const idx = db[key].findIndex((x) => x.id === req.params.id);
     if (idx === -1) return res.status(404).json({ ok: false, error: "Item not found" });
+    const prev = db[key][idx];
+
+    // Clean up replaced Cloudinary asset
+    const oldPublicId = prev.filePublicId || prev.imagePublicId || prev.public_id;
+    const newUrl = req.body.fileUrl || req.body.imageUrl || req.body.url;
+    const oldUrl = prev.fileUrl || prev.imageUrl || prev.url;
+    if (oldPublicId && newUrl && oldUrl && newUrl !== oldUrl) {
+      deleteFromCloudinary(oldPublicId).catch(() => {});
+    }
+
     db[key][idx] = { ...db[key][idx], ...req.body, id: req.params.id };
     await saveDb();
     res.json({ ok: true, item: db[key][idx] });
@@ -733,6 +1158,14 @@ for (const [route, cfg] of Object.entries(collectionsMap)) {
   app.delete(`/api/${route}/:id`, requireAdmin, async (req, res) => {
     const idx = db[key].findIndex((x) => x.id === req.params.id);
     if (idx === -1) return res.status(404).json({ ok: false, error: "Item not found" });
+    const item = db[key][idx];
+
+    // Delete asset from Cloudinary when record is deleted
+    const pubId = item.filePublicId || item.imagePublicId || item.public_id;
+    if (pubId) {
+      deleteFromCloudinary(pubId).catch(() => {});
+    }
+
     db[key].splice(idx, 1);
     await saveDb();
     res.json({ ok: true });
@@ -871,6 +1304,7 @@ app.post("/api/admin/restore", requireAdmin, async (req, res) => {
   }
   db = body;
   db.accessLogs = db.accessLogs || [];
+  db.verifyLogs = db.verifyLogs || [];
   db.circulars = db.circulars || [];
   db.certificates = db.certificates || [];
   await saveDb();

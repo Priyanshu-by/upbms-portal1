@@ -27,7 +27,8 @@ const COLLECTIONS = {
   payments: mongoose.model("Payment", itemSchema),
   grievances: mongoose.model("Grievance", itemSchema),
   news: mongoose.model("News", itemSchema),
-  accessLogs: mongoose.model("AccessLog", itemSchema)
+  accessLogs: mongoose.model("AccessLog", itemSchema),
+  verifyLogs: mongoose.model("VerifyLog", itemSchema)
 };
 
 function clean(doc) {

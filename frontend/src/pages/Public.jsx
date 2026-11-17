@@ -575,7 +575,8 @@ export function JoinPage() {
       // Validated successfully
       setErrors((prev) => ({ ...prev, photo: "" }));
       try {
-        const url = await uploadFile(file, session);
+        setBusy(true);
+        const url = await uploadFile(file, session, { folder: "upbms/members" });
         setPhotoUrl(url);
         showToast(t(lang, "पासपोर्ट फोटो सफलतापूर्वक अपलोड हो गई।", "Passport photo uploaded successfully."));
       } catch (err) {
@@ -584,6 +585,8 @@ export function JoinPage() {
         showToast(msg);
         e.target.value = "";
         setPhotoUrl("");
+      } finally {
+        setBusy(false);
       }
     };
 
@@ -740,6 +743,12 @@ export function JoinPage() {
                 accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                 onChange={handlePassportPhotoChange}
               />
+              {photoUrl && (
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                  <img src={photoUrl} alt="Preview" style={{ width: 56, height: 72, objectFit: "cover", borderRadius: 6, border: "2px solid #0a2252" }} />
+                  <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 700 }}>✓ {t(lang, "फोटो अपलोड हो गई", "Photo uploaded")}</span>
+                </div>
+              )}
               {errors.photo && (
                 <div style={{ color: "var(--danger)", fontSize: "0.8rem", fontWeight: 700, marginTop: 4 }}>
                   {errors.photo}
@@ -1288,6 +1297,880 @@ function Field({ label, error, ...props }) {
   );
 }
 
+function LoginModalContent({ modal, setModal, lang, showToast, persistSession, refresh }) {
+  const { setRoute } = usePortal();
+  const [loginTab, setLoginTab] = useState("otp"); // Default to Passwordless Email OTP
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [authConfig, setAuthConfig] = useState({
+    isGoogleAuthConfigured: false,
+    isGmailConfigured: false,
+    googleClientId: "",
+    database: { connected: false }
+  });
+
+  // ── Email OTP Authentication State ──
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpStep, setOtpStep] = useState(1); // 1 = Enter Email, 2 = Enter 6-digit OTP
+  const [otpCode, setOtpCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // ── Password / Admin Login State ──
+  const [showPass, setShowPass] = useState(false);
+  const [query, setQuery] = useState(modal.prefill || "");
+  const [password, setPassword] = useState("");
+  const [activePreset, setActivePreset] = useState(null);
+
+  // ── Fetch Auth System Status on Mount ──
+  useEffect(() => {
+    api("/api/auth/status")
+      .then((d) => {
+        setAuthConfig((prev) => ({
+          ...prev,
+          database: d.database || { connected: false },
+          isGmailConfigured: d.gmail ? d.gmail.configured : false,
+        }));
+      })
+      .catch(() => {});
+
+    api("/api/auth/config")
+      .then((d) => {
+        setAuthConfig((prev) => ({
+          ...prev,
+          googleClientId: d.googleClientId || "",
+          isGoogleAuthConfigured: d.isGoogleAuthConfigured || false,
+          isGmailConfigured: d.isGmailConfigured !== undefined ? d.isGmailConfigured : prev.isGmailConfigured,
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── 60-Second Cooldown Countdown Timer ──
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
+
+  // ── Load Google GSI Script if Google Client ID is configured ──
+  useEffect(() => {
+    if (!authConfig.googleClientId || !authConfig.isGoogleAuthConfigured) return;
+    if (loginTab !== "google") return;
+    const existing = document.getElementById("gsi-script");
+    const initGoogle = () => {
+      if (!window.google) return;
+      window.google.accounts.id.initialize({
+        client_id: authConfig.googleClientId,
+        callback: handleGoogleCredential,
+      });
+      const btn = document.getElementById("google-signin-btn");
+      if (btn) {
+        window.google.accounts.id.renderButton(btn, {
+          theme: "outline",
+          size: "large",
+          width: 320,
+          text: "signin_with_google",
+          shape: "rectangular",
+        });
+      }
+    };
+    if (existing) {
+      initGoogle();
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "gsi-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = initGoogle;
+    document.head.appendChild(script);
+  }, [authConfig.googleClientId, authConfig.isGoogleAuthConfigured, loginTab]);
+
+  // ── Send 6-Digit OTP Handler ──
+  async function handleSendOtp(e) {
+    if (e) e.preventDefault();
+    if (submitting) return;
+    const cleanEmail = otpEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setAuthError(t(lang, "कृपया एक मान्य ईमेल पता दर्ज करें।", "Please enter a valid email address."));
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const data = await api("/api/auth/send-otp", {
+        method: "POST",
+        body: { email: cleanEmail },
+      });
+      setOtpStep(2);
+      setResendCooldown(data.cooldownSeconds || 60);
+      setAuthSuccess(
+        t(
+          lang,
+          `6-अंकीय सत्यापन कोड ${cleanEmail} पर भेज दिया गया है।`,
+          `6-digit verification code sent to ${cleanEmail}.`
+        )
+      );
+    } catch (err) {
+      setAuthError(err.message || "Failed to send OTP.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Verify 6-Digit OTP Handler ──
+  async function handleVerifyOtp(e) {
+    if (e) e.preventDefault();
+    if (submitting) return;
+    const cleanOtp = otpCode.trim();
+    if (cleanOtp.length !== 6) {
+      setAuthError(t(lang, "कृपया पूरा 6-अंकीय कोड दर्ज करें।", "Please enter the full 6-digit code."));
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const data = await api("/api/auth/verify-otp", {
+        method: "POST",
+        body: {
+          email: otpEmail.trim().toLowerCase(),
+          otp: cleanOtp,
+        },
+      });
+
+      const sessionUser = data.user || {};
+      const nextSession = {
+        token: data.token,
+        memberId: sessionUser.memberId || sessionUser.id,
+        member: sessionUser,
+        level: sessionUser.level || 3,
+        isAdmin:
+          sessionUser.level === 1 ||
+          sessionUser.level === 2 ||
+          sessionUser.role === "admin" ||
+          sessionUser.role === "superadmin",
+      };
+
+      persistSession(nextSession);
+      await refresh(nextSession);
+      setModal(null);
+      showToast(
+        t(
+          lang,
+          data.isNewUser ? "पंजीकरण एवं लॉगिन सफल!" : "लॉगिन सफल!",
+          data.message || "Authentication successful!"
+        )
+      );
+
+      // Redirect to appropriate dashboard
+      if (nextSession.isAdmin) {
+        setRoute("admin");
+      } else {
+        setRoute("idcard");
+      }
+    } catch (err) {
+      setAuthError(err.message || "Verification failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Password Login Handler (Admin / Core Members) ──
+  async function handlePasswordLogin(e) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setAuthError("");
+    const raw = { query, password };
+    try {
+      const data = await api("/api/member/login", { method: "POST", body: raw });
+      const next = {
+        memberId: data.member.id,
+        memberPass: raw.password,
+        member: data.member,
+        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
+        isAdmin: Boolean(data.isAdmin),
+      };
+      persistSession(next);
+      await refresh(next);
+      setModal(null);
+      showToast(t(lang, `लॉगिन सफल (Level ${next.level})`, `Login successful (Level ${next.level})`));
+      if (next.isAdmin) setRoute("admin");
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Google One-Click Login Handler ──
+  async function handleGoogleCredential({ credential }) {
+    if (submitting) return;
+    setSubmitting(true);
+    setAuthError("");
+    try {
+      const data = await api("/api/auth/google", { method: "POST", body: { credential } });
+      const next = {
+        memberId: data.member.id,
+        memberPass: data.memberPass || data.member.password || "google",
+        member: data.member,
+        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
+        isAdmin: Boolean(data.isAdmin),
+      };
+      persistSession(next);
+      await refresh(next);
+      setModal(null);
+      showToast(t(lang, "Google लॉगिन सफल!", "Google login successful!"));
+      if (next.isAdmin) setRoute("admin");
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const demoAccounts = [
+    { id: "superadmin", level: "Level 1 (Super Admin)", icon: "👑", user: "admin", pass: "admin123" },
+    { id: "admin", level: "Level 2 (Admin)", icon: "⭐", user: "UPBMS-CORE-002", pass: "123456" },
+    { id: "member", level: "Level 3 (Member)", icon: "🎖️", user: "UPBMS-CORE-001", pass: "123456" },
+  ];
+
+  function handlePreset(acc) {
+    setQuery(acc.user);
+    setPassword(acc.pass);
+    setActivePreset(acc.id);
+  }
+
+  return (
+    <div className="login-modal-wrapper">
+      {/* Header */}
+      <div className="login-modal-header">
+        <div className="login-header-brand">
+          <div className="login-header-icon-badge">🔐</div>
+          <div>
+            <div className="login-header-title">{t(lang, "पोर्टल लॉगिन (User Authentication)", "Portal Authentication")}</div>
+            <div className="login-header-subtitle">{t(lang, "पासवर्ड-मुक्त ईमेल OTP सत्यापन • UPBMS", "Passwordless Email OTP Verification • UPBMS")}</div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="login-btn-close"
+          onClick={() => setModal(null)}
+          title={t(lang, "बंद करें", "Close")}
+        >
+          ✕ <span>{t(lang, "बंद करें", "Close")}</span>
+        </button>
+      </div>
+
+      {/* Primary Tab Switcher */}
+      <div className="login-tabs-strip">
+        <button
+          type="button"
+          className={`login-tab-btn ${loginTab === "otp" ? "active" : ""}`}
+          onClick={() => { setLoginTab("otp"); setAuthError(""); setAuthSuccess(""); }}
+        >
+          📧 {t(lang, "ईमेल OTP लॉगिन", "Email OTP Login")}
+        </button>
+        <button
+          type="button"
+          className={`login-tab-btn ${loginTab === "password" ? "active" : ""}`}
+          onClick={() => { setLoginTab("password"); setAuthError(""); setAuthSuccess(""); }}
+        >
+          🔑 {t(lang, "पासवर्ड / एडमिन", "Password / Admin")}
+        </button>
+        {authConfig.isGoogleAuthConfigured && (
+          <button
+            type="button"
+            className={`login-tab-btn ${loginTab === "google" ? "active" : ""}`}
+            onClick={() => { setLoginTab("google"); setAuthError(""); setAuthSuccess(""); }}
+          >
+            🌐 Google
+          </button>
+        )}
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 1: PASSWORDLESS EMAIL OTP AUTHENTICATION (PRIMARY FLOW)
+          ───────────────────────────────────────────────────────────── */}
+      {loginTab === "otp" && (
+        <div className="otp-box-screen">
+          {/* Show warning banner only if database or gmail is awaiting configuration */}
+          {(!authConfig.database?.connected || !authConfig.isGmailConfigured) && (
+            <div className="auth-db-status-banner disconnected">
+              <span>⚠️</span>
+              <div>
+                <b>
+                  {!authConfig.database?.connected
+                    ? t(lang, "MongoDB Atlas कनेक्शन प्रतीक्षारत (Awaiting MONGODB_URI in backend/.env)", "Awaiting MongoDB Atlas URI in backend/.env")
+                    : t(lang, "Gmail App Password लंबित (Awaiting GMAIL_APP_PASSWORD in backend/.env)", "Awaiting Gmail App Password in backend/.env")}
+                </b>
+              </div>
+            </div>
+          )}
+
+          {/* Feedback Messages */}
+          {authError && (
+            <div className="auth-error-box">
+              <span>⚠️</span>
+              <div>{authError}</div>
+            </div>
+          )}
+          {authSuccess && (
+            <div className="auth-success-box">
+              <span>✅</span>
+              <div>{authSuccess}</div>
+            </div>
+          )}
+
+          {/* STEP 1: ENTER EMAIL */}
+          {otpStep === 1 && (
+            <form onSubmit={handleSendOtp}>
+              <div className="otp-screen-badge">
+                <span>✉️</span>
+                <span>{t(lang, "पासवर्ड की आवश्यकता नहीं है", "No Password Required")}</span>
+              </div>
+              <h3 className="otp-screen-title">
+                {t(lang, "अपना ईमेल दर्ज करें", "Enter Your Email Address")}
+              </h3>
+              <p className="otp-screen-desc">
+                {t(
+                  lang,
+                  "हम आपके ईमेल पर 6-अंकीय सत्यापन कोड भेजेंगे। नए उपयोगकर्ता स्वतः पंजीकृत हो जाएंगे।",
+                  "We'll send a 6-digit OTP to your inbox. New users are automatically registered upon verification."
+                )}
+              </p>
+
+              <div className="login-field-group">
+                <label className="login-field-label">
+                  <span>📧</span>
+                  <span>{t(lang, "ईमेल पता (Email Address)", "Email Address")}</span>
+                </label>
+                <div className="login-input-wrap">
+                  <input
+                    className="login-form-input"
+                    type="email"
+                    name="email"
+                    value={otpEmail}
+                    onChange={(e) => setOtpEmail(e.target.value)}
+                    placeholder="e.g. member@gmail.com"
+                    required
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="login-submit-btn"
+                disabled={submitting || !otpEmail.trim()}
+              >
+                {submitting ? (
+                  <>
+                    <span className="login-spinner"></span>
+                    <span>{t(lang, "सत्यापन कोड भेजा जा रहा है...", "Sending 6-Digit OTP...")}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📤</span>
+                    <span>{t(lang, "6-अंकीय OTP कोड भेजें", "Send 6-Digit Verification Code")}</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* STEP 2: VERIFY 6-DIGIT OTP */}
+          {otpStep === 2 && (
+            <form onSubmit={handleVerifyOtp}>
+              <div className="otp-screen-badge">
+                <span>⏱️</span>
+                <span>{t(lang, "OTP 5 मिनट के लिए मान्य है", "OTP Valid for 5 Minutes")}</span>
+              </div>
+              <h3 className="otp-screen-title">
+                {t(lang, "6-अंकीय OTP कोड दर्ज करें", "Enter 6-Digit Verification Code")}
+              </h3>
+              <p className="otp-screen-desc">
+                {t(lang, "सत्यापन कोड इस ईमेल पर भेजा गया है:", "Verification code sent to:")}{" "}
+                <span className="otp-target-email-pill">{otpEmail}</span>
+              </p>
+
+              <div className="login-field-group">
+                <label className="login-field-label">
+                  <span>🔢</span>
+                  <span>{t(lang, "6-अंकीय OTP दर्ज करें (One-Time Password)", "Enter 6-Digit Code")}</span>
+                </label>
+                <input
+                  className="otp-digits-input"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="••••••"
+                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="login-submit-btn"
+                disabled={submitting || otpCode.trim().length !== 6}
+                style={{ marginTop: "16px" }}
+              >
+                {submitting ? (
+                  <>
+                    <span className="login-spinner"></span>
+                    <span>{t(lang, "सत्यापित किया जा रहा है...", "Verifying OTP...")}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🔐</span>
+                    <span>{t(lang, "सत्यापित करें एवं लॉगिन करें", "Verify & Sign In")}</span>
+                  </>
+                )}
+              </button>
+
+              {/* Resend Cooldown and Back Action */}
+              <div className="otp-resend-row">
+                <button
+                  type="button"
+                  className="otp-resend-link"
+                  onClick={() => {
+                    setOtpStep(1);
+                    setOtpCode("");
+                    setAuthError("");
+                    setAuthSuccess("");
+                  }}
+                >
+                  ← {t(lang, "ईमेल बदलें", "Change Email")}
+                </button>
+
+                <div>
+                  {resendCooldown > 0 ? (
+                    <span className="otp-cooldown-text">
+                      ⏱️ {t(lang, `पुनः भेजें (${resendCooldown}s)`, `Resend in ${resendCooldown}s`)}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="otp-resend-link"
+                      onClick={() => handleSendOtp()}
+                      disabled={submitting}
+                    >
+                      🔄 {t(lang, "पुनः OTP भेजें", "Resend OTP")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </form>
+          )}
+
+          <div className="login-security-trust" style={{ marginTop: "20px" }}>
+            <span>🛡️</span>
+            <span>{t(lang, "आधिकारिक प्रेषक: upbmsofficial@gmail.com • 256-बिट SSL", "Official Sender: upbmsofficial@gmail.com • 256-Bit SSL")}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 2: PASSWORD / ADMIN LOGIN (PRESERVES EXISTING ADMIN ACCESS)
+          ───────────────────────────────────────────────────────────── */}
+      {loginTab === "password" && (
+        <form onSubmit={handlePasswordLogin} className="login-form-container">
+          {authError && (
+            <div className="auth-error-box">
+              <span>⚠️</span>
+              <div>{authError}</div>
+            </div>
+          )}
+
+          <div className="demo-accounts-card">
+            <div className="demo-accounts-top">
+              <div className="demo-accounts-title">
+                <span>💡</span>
+                <span>{t(lang, "एडमिन एवं डेमो खाते (Admin & Demo Accounts):", "Admin & Demo Accounts:")}</span>
+              </div>
+              <span className="demo-auto-hint">{t(lang, "क्लिक करके भरें", "Click to Fill")}</span>
+            </div>
+            <div className="demo-items-grid">
+              {demoAccounts.map((acc) => {
+                const isSelected = activePreset === acc.id || (query === acc.user && password === acc.pass);
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => handlePreset(acc)}
+                    className={`demo-account-chip ${isSelected ? "active" : ""}`}
+                  >
+                    <div className="demo-account-left">
+                      <span className="demo-account-icon">{acc.icon}</span>
+                      <span className="demo-account-name"><b>{acc.level}:</b></span>
+                    </div>
+                    <div className="demo-account-creds">
+                      <code>{acc.user}</code> / <code>{acc.pass}</code>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="login-field-group">
+            <label className="login-field-label">
+              <span>👤</span>
+              <span>{t(lang, "सदस्य आईडी / यूज़रनेम / मोबाइल", "Member ID / Username / Mobile")}</span>
+            </label>
+            <div className="login-input-wrap">
+              <input
+                className="login-form-input"
+                name="query"
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); setActivePreset(null); }}
+                placeholder="e.g. admin or UPBMS-CORE-001"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="login-field-group">
+            <label className="login-field-label">
+              <span>🔒</span>
+              <span>{t(lang, "पासवर्ड", "Password")}</span>
+            </label>
+            <div className="login-input-wrap">
+              <input
+                className="login-form-input"
+                name="password"
+                type={showPass ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setActivePreset(null); }}
+                placeholder="e.g. admin123 or 123456"
+                style={{ paddingRight: "44px" }}
+                required
+              />
+              <button
+                type="button"
+                className="login-toggle-pass-btn"
+                onClick={() => setShowPass(!showPass)}
+                tabIndex={-1}
+                title={showPass ? "Hide" : "Show"}
+              >
+                {showPass ? "👁️" : "🙈"}
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" className="login-submit-btn" disabled={submitting}>
+            {submitting ? (
+              <>
+                <span className="login-spinner"></span>
+                <span>{t(lang, "सत्यापित किया जा रहा है...", "Authenticating...")}</span>
+              </>
+            ) : (
+              <>
+                <span>🔑</span>
+                <span>{t(lang, "पासवर्ड द्वारा लॉगिन करें", "Sign In with Password")}</span>
+              </>
+            )}
+          </button>
+        </form>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 3: GOOGLE ONE-TAP LOGIN
+          ───────────────────────────────────────────────────────────── */}
+      {loginTab === "google" && (
+        <div className="login-form-container">
+          {authError && (
+            <div className="auth-error-box">
+              <span>⚠️</span>
+              <div>{authError}</div>
+            </div>
+          )}
+          <div className="otp-screen-desc" style={{ textAlign: "center", marginBottom: "20px" }}>
+            {t(
+              lang,
+              "अपने Google खाते से एक क्लिक में सुरक्षित रूप से लॉगिन करें।",
+              "Sign in securely with one click using your Google account."
+            )}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+            <div id="google-signin-btn"></div>
+          </div>
+          {submitting && (
+            <div style={{ textAlign: "center", color: "#64748b", marginTop: "12px" }}>
+              <span className="login-spinner"></span> {t(lang, "Google लॉगिन सत्यापित हो रहा है...", "Verifying Google account...")}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MembershipVerificationPage() {
+  const { state, lang, verifyId, setVerifyId, setRoute, setModal } = usePortal();
+  const s = state?.settings || {};
+
+  // Auto-populate query from verifyId (set by QR scan URL param)
+  const [query, setQuery] = useState(verifyId || "");
+  const [member, setMember] = useState(null);
+  const [receipts, setReceipts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [searched, setSearched] = useState(false);
+  const [verifiedAt] = useState(() => new Date().toLocaleString("hi-IN", { timeZone: "Asia/Kolkata" }));
+
+  // Auto-search if verifyId is present on mount
+  useEffect(() => {
+    if (verifyId && verifyId.trim()) {
+      doLookup(verifyId.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifyId]);
+
+  async function doLookup(q) {
+    if (!q) return;
+    setLoading(true);
+    setError("");
+    setMember(null);
+    setReceipts([]);
+    setSearched(false);
+    try {
+      const data = await api(`/api/verify/${encodeURIComponent(q)}`);
+      setMember(data.member || null);
+      setReceipts(data.receipts || []);
+    } catch (err) {
+      setError(err.message || t(lang, "इस आईडी / मोबाइल से कोई सदस्य नहीं मिला।", "No member found for this ID / mobile."));
+    } finally {
+      setLoading(false);
+      setSearched(true);
+    }
+  }
+
+  function handleSearch(e) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setVerifyId(q);
+    doLookup(q);
+  }
+
+  const isActive = member && member.status === "active";
+  const orgName = s.orgNameHi || "उत्तर प्रदेश बैंक मित्र संघ";
+  const orgNameEn = s.orgNameEn || "Uttar Pradesh Bank Mitra Sangh (UPBMS)";
+  const regNo = s.regNo || "UP-REG-LKO-2024-8841";
+
+  // Format date nicely
+  function fmtDate(d) {
+    if (!d) return "—";
+    try {
+      return new Date(d).toLocaleDateString("hi-IN", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
+    } catch { return d; }
+  }
+
+  const detailRows = member ? [
+    { icon: "👤", labelHi: "सदस्य का नाम", labelEn: "Member Name", value: t(lang, member.nameHi, member.nameEn) },
+    { icon: "🪪", labelHi: "सदस्यता संख्या", labelEn: "Membership ID", value: member.memberCode || "—" },
+    { icon: "🏛️", labelHi: "जनपद", labelEn: "District", value: localizeDual(member.district, lang) || "—" },
+    { icon: "🏘️", labelHi: "ब्लॉक/केंद्र", labelEn: "Block / Center", value: localizeDual(member.block, lang) || "—" },
+    { icon: "📅", labelHi: "पंजीकरण दिनांक", labelEn: "Registration Date", value: fmtDate(member.joinDate || member.createdAt) },
+    { icon: "🏦", labelHi: "संबद्ध बैंक", labelEn: "Sponsor Bank", value: member.bankName || "—" },
+    { icon: "🔑", labelHi: "केओ/सीएसपी कोड", labelEn: "KO / CSP Code", value: member.koCode || "—" },
+    { icon: "🏷️", labelHi: "पदनाम", labelEn: "Designation", value: t(lang, member.designationHi, member.designationEn) || member.role || "—" },
+    {
+      icon: isActive ? "🟢" : "🔴",
+      labelHi: "सदस्यता स्थिति",
+      labelEn: "Membership Status",
+      value: isActive
+        ? t(lang, "सक्रिय (Active)", "Active")
+        : t(lang, "निष्क्रिय / लंबित", "Inactive / Pending"),
+      highlight: isActive ? "#16a34a" : "#dc2626"
+    }
+  ] : [];
+
+  return (
+    <div className="verification-page-container">
+      {/* ── Header Card ── */}
+      <div className="verification-card">
+        <div className="verification-card-header">
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+            <div className="verification-logo-wrap">
+              <img src="/images/upbms-crest.svg" alt="UPBMS Logo" onError={(e) => { e.target.style.display = "none"; }} />
+            </div>
+          </div>
+          <p className="verification-org-title">{orgName}</p>
+          <p className="verification-org-subtitle">{orgNameEn}</p>
+          <p className="verification-org-reg">Regd. No.: {regNo}</p>
+        </div>
+
+        {/* ── Status Badge ── */}
+        {searched && member && (
+          <div className="verification-badge-strip">
+            {isActive ? (
+              <div className="official-verify-badge-verified">
+                <div className="badge-shield-circle">✓</div>
+                <div>
+                  <div className="badge-verified-title">{t(lang, "सदस्यता सत्यापन सफल", "Membership Verified")}</div>
+                  <div className="badge-verified-sub">✅ VERIFIED ACTIVE MEMBER • सत्यापित सक्रिय सदस्य</div>
+                </div>
+              </div>
+            ) : (
+              <div className="official-verify-badge-invalid">
+                <div className="badge-shield-circle" style={{ background: "#dc2626" }}>✕</div>
+                <div>
+                  <div className="badge-verified-title" style={{ color: "#991b1b" }}>{t(lang, "सदस्यता असत्यापित / अमान्य", "Membership Invalid / Inactive")}</div>
+                  <div className="badge-verified-sub" style={{ color: "#7f1d1d" }}>⚠ INACTIVE MEMBER • निष्क्रिय सदस्य</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Declaration Banner ── */}
+        {searched && member && isActive && (
+          <div className="verify-declaration-banner">
+            <p className="declaration-text-hi">
+              "यह प्रमाणित किया जाता है कि यह व्यक्ति उत्तर प्रदेश बैंक मित्र संघ का पंजीकृत सदस्य है।"
+            </p>
+            <p className="declaration-text-en">
+              "This is to certify that this person is a registered member of Uttar Pradesh Bank Mitra Sangh (UPBMS)."
+            </p>
+          </div>
+        )}
+
+        {/* ── Member Photo + Bio ── */}
+        {searched && member && (
+          <>
+            <div className="verify-member-bio-row">
+              <div className="verify-photo-box">
+                {member.photoUrl
+                  ? <img src={member.photoUrl} alt={t(lang, member.nameHi, member.nameEn)} />
+                  : <span style={{ fontSize: 42, opacity: 0.35 }}>👤</span>
+                }
+              </div>
+              <div className="verify-bio-content">
+                <h2 className="verify-member-name">{t(lang, member.nameHi, member.nameEn)}</h2>
+                <p className="verify-member-role">
+                  {t(lang, member.designationHi, member.designationEn) || member.role || t(lang, "बैंक मित्र सदस्य", "Bank Mitra Member")}
+                </p>
+                <div className="verify-code-pill">
+                  🪪 {member.memberCode}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Detail Grid ── */}
+            <div className="verify-details-grid">
+              {detailRows.map((row, i) => (
+                <div key={i} className="verify-detail-item">
+                  <span className="verify-item-label">{row.icon} {t(lang, row.labelHi, row.labelEn)}</span>
+                  <span className="verify-item-value" style={row.highlight ? { color: row.highlight, fontWeight: 900 } : {}}>
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Verification timestamp ── */}
+            <div style={{ padding: "10px 24px 4px", textAlign: "right", fontSize: "0.78rem", color: "#94a3b8" }}>
+              🕐 {t(lang, "सत्यापन समय:", "Verified at:")} {verifiedAt}
+            </div>
+          </>
+        )}
+
+        {/* ── Error / Not found ── */}
+        {searched && !member && (
+          <div style={{ padding: "28px 24px", textAlign: "center" }}>
+            <div style={{ fontSize: 54, marginBottom: 12 }}>❌</div>
+            <h3 style={{ color: "#991b1b", fontWeight: 900, fontSize: "1.2rem", marginBottom: 8 }}>
+              {t(lang, "सदस्यता सत्यापन असफल", "Membership Verification Failed")}
+            </h3>
+            <p style={{ color: "#64748b", fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 10px" }}>
+              {error || t(lang, "दर्ज की गई आईडी से कोई पंजीकृत सदस्य नहीं मिला।", "No registered member found for the entered ID.")}
+            </p>
+          </div>
+        )}
+
+        {/* ── Loading ── */}
+        {loading && (
+          <div style={{ padding: "36px 24px", textAlign: "center", color: "#64748b", fontSize: "1rem" }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>⏳</div>
+            {t(lang, "सत्यापन डेटा प्राप्त हो रहा है...", "Fetching verification data...")}
+          </div>
+        )}
+
+        {/* ── Search Bar ── */}
+        <div style={{ padding: "20px 24px 24px", background: "#f8fafc", borderTop: "1.5px solid #e2e8f0" }} className="no-print">
+          <p style={{ fontSize: "0.88rem", color: "#475569", fontWeight: 700, marginBottom: 10, textAlign: "center" }}>
+            🔍 {t(lang, "किसी अन्य सदस्य का सत्यापन करें — आईडी या मोबाइल नंबर दर्ज करें", "Verify another member — enter ID or mobile number")}
+          </p>
+          <form onSubmit={handleSearch} style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <input
+              className="form-control"
+              style={{ flex: 1, minWidth: 200, height: 44 }}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t(lang, "सदस्य आईडी / मोबाइल नंबर", "Member ID / Mobile Number")}
+              required
+            />
+            <button type="submit" className="btn-verify-search" disabled={loading}>
+              {loading ? t(lang, "खोज रहे हैं...", "Searching...") : `🔍 ${t(lang, "सत्यापित करें", "Verify")}`}
+            </button>
+          </form>
+        </div>
+
+        {/* ── Action Buttons ── */}
+        <div style={{ padding: "16px 24px 24px", display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }} className="no-print">
+          {searched && member && (
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={() => window.print()}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              🖨️ {t(lang, "सत्यापन पर्ची प्रिंट करें", "Print Verification Slip")}
+            </button>
+          )}
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setRoute("idcard")}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            🪪 {t(lang, "पहचान पत्र पोर्टल", "ID Card Portal")}
+          </button>
+          <button
+            className="btn btn-white btn-sm"
+            onClick={() => { setRoute("home"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            🏠 {t(lang, "मुख्य पृष्ठ पर जाएं", "Return to Homepage")}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Official Footer ── */}
+      <div className="verify-portal-footer no-print">
+        <span>🏛️ {orgName} | <strong>Official Member Verification Portal</strong></span>
+        <span style={{ display: "block", fontSize: "0.78rem", marginTop: 4, opacity: 0.75 }}>
+          {t(lang, "हेल्पलाइन:", "Helpline:")} {s.helpline || "+91-94500-11223"} &nbsp;|&nbsp; {s.email || "helpdesk@upbms.org.in"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function Modals() {
   const { modal, setModal, lang, state, session, persistSession, logout, refresh, showToast, recordSignedUsage } = usePortal();
   useEffect(() => {
@@ -1298,24 +2181,24 @@ export function Modals() {
   }, [modal]);
 
   if (!modal) return null;
-  async function login(e) {
-    e.preventDefault();
-    const raw = Object.fromEntries(new FormData(e.target).entries());
-    try {
-      const data = await api("/api/member/login", { method: "POST", body: raw });
-      const next = {
-        memberId: data.member.id,
-        memberPass: raw.password,
-        member: data.member,
-        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
-        isAdmin: Boolean(data.isAdmin)
-      };
-      persistSession(next);
-      await refresh(next);
-      setModal(null);
-      showToast(t(lang, `लॉगिन सफल (Level ${next.level})`, `Login successful (Level ${next.level})`));
-    } catch (err) { showToast(err.message); }
+
+  if (modal.kind === "login") {
+    return (
+      <div className="modal-backdrop" onClick={() => setModal(null)}>
+        <div className="modal-box modal-box-login" onClick={(e) => e.stopPropagation()}>
+          <LoginModalContent
+            modal={modal}
+            setModal={setModal}
+            lang={lang}
+            showToast={showToast}
+            persistSession={persistSession}
+            refresh={refresh}
+          />
+        </div>
+      </div>
+    );
   }
+
   let body = null;
   const item = modal.item;
   const isPrintable = modal.kind === "file" || modal.kind === "signedDoc" || modal.kind === "plainDoc" || modal.kind === "receipt";
@@ -1325,15 +2208,13 @@ export function Modals() {
     ? `📜 ${t(lang, item?.titleHi, item?.titleEn) || t(lang, "संघ दस्तावेज़", "Association Document")}`
     : modal.kind === "receipt"
     ? `🧾 ${t(lang, "शुल्क रसीद", "Payment Receipt")}`
-    : modal.kind === "login"
-    ? `🔐 ${t(lang, "पोर्टल लॉगिन (User Login)", "Portal Login")}`
     : modal.kind === "memberMenu"
     ? `👤 ${t(lang, "सदस्य प्रोफ़ाइल एवं स्तर", "Member Profile & Access Level")}`
     : "UPBMS";
 
-  if (modal.kind === "login" || modal.kind === "memberMenu") {
+  if (modal.kind === "memberMenu") {
     const userLvl = session?.level || (session?.isAdmin ? 1 : (session?.member?.level || 3));
-    body = modal.kind === "memberMenu" ? (
+    body = (
       <div style={{ padding: "16px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
           <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#ffd166", display: "grid", placeItems: "center", fontSize: "1.3rem", fontWeight: 900 }}>
@@ -1358,7 +2239,7 @@ export function Modals() {
             {userLvl === 1 && t(lang, "पूर्ण अधिकार: सभी संपादन + उपयोगकर्ता प्रबंधन (केवल 1 खाता)।", "All Access: All editing privileges + User Management.")}
             {userLvl === 2 && t(lang, "प्रशासक: वेबसाइट + सदस्य सूची + एडमिन पैनल (User Management को छोड़कर)।", "Admin: Website + Members + Admin Panel (except User Management).")}
             {userLvl === 3 && t(lang, "सत्यापित सदस्य: संपूर्ण वेबसाइट + सदस्य सूची + डिजिटल पहचान पत्र।", "Verified Member: Website + Members Directory + Digital ID.")}
-            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट। सदस्य सूची हेतु सदस्यता लें।", "Visitor: Public website. Join to view Members Directory.")}
+            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट + सदस्य सूची। एडमिन पैनल वर्जित।", "Visitor: Public website + Member Directory. Admin Panel restricted.")}
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -1367,30 +2248,6 @@ export function Modals() {
           </button>
         </div>
       </div>
-    ) : (
-      <form onSubmit={login} style={{ padding: "16px 20px" }}>
-        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 14px", borderRadius: 8, marginBottom: 14 }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#166534", marginBottom: 4 }}>
-            💡 {t(lang, "परीक्षण हेतु डेमो खाते (Demo Accounts):", "Demo Accounts for Testing:")}
-          </div>
-          <div style={{ fontSize: "0.78rem", color: "#15803d", lineHeight: 1.5 }}>
-            <div>👑 <b>Level 1 (Super Admin):</b> <code>admin</code> / <code>admin123</code></div>
-            <div>⭐ <b>Level 2 (Admin):</b> <code>UPBMS-CORE-002</code> / <code>123456</code></div>
-            <div>🎖️ <b>Level 3 (Member):</b> <code>UPBMS-CORE-001</code> / <code>123456</code></div>
-          </div>
-        </div>
-        <label className="form-group">
-          {t(lang, "सदस्य आईडी / यूज़रनेम / मोबाइल नंबर", "Member ID / Username / Mobile")}
-          <input className="form-control" name="query" defaultValue={modal.prefill || ""} placeholder="e.g. admin or UPBMS-CORE-001" required />
-        </label>
-        <label className="form-group" style={{ marginTop: 8 }}>
-          {t(lang, "पासवर्ड", "Password")}
-          <input className="form-control" name="password" type="password" placeholder="e.g. admin123 or 123456" required />
-        </label>
-        <button className="btn btn-primary" style={{ width: "100%", marginTop: 14 }}>
-          🔑 {t(lang, "लॉगिन करें", "Sign In")}
-        </button>
-      </form>
     );
   } else if (modal.kind === "file" && !modal.locked) {
     body = window.UPBMSPrint ? <HtmlBlock html={window.UPBMSPrint.renderExactUploadedFileHtml(item, lang)} /> : <a href={item.fileUrl}>{item.fileUrl}</a>;
