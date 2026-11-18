@@ -445,10 +445,165 @@ export function JoinPage() {
 
   const s = state.settings;
   const tc = s.termsAndConditions || {};
-  const fee = s.membershipFeeGeneral || 251;
-  const plan = "general";
+
+  // Calendar-Year Dynamic Membership Pricing: price = (13 - currentMonth) * 50
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1 (Jan) to 12 (Dec)
+  const remainingMonths = Math.max(1, 13 - currentMonth);
+  const defaultCalculatedFee = remainingMonths * 50;
+
+  const [pricingInfo, setPricingInfo] = useState({
+    year: currentYear,
+    currentMonth,
+    remainingMonths,
+    ratePerMonth: 50,
+    price: defaultCalculatedFee,
+    validUntil: `${currentYear}-12-31`,
+    validityDisplayEn: `${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current"} 1 – Dec 31, ${currentYear}`,
+    validityDisplayHi: `1 ${["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान"} – 31 दिसंबर ${currentYear}`,
+    monthNameEn: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current",
+    monthNameHi: ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान",
+    purposeEn: `Annual Membership Fee (${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current"}–Dec ${currentYear})`,
+    purposeHi: `वार्षिक सदस्यता शुल्क (${["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान"}–दिसंबर ${currentYear})`
+  });
+  const gatewaySettings = state?.settings?.paymentGateways || {
+    enablePnbQr: true,
+    enableRazorpay: true,
+    enableManualUpi: true,
+    defaultGateway: "pnb_qr"
+  };
+
+  const getInitialGateway = () => {
+    const def = gatewaySettings.defaultGateway || "pnb_qr";
+    if (def === "pnb_qr" && gatewaySettings.enablePnbQr) return "pnb_qr";
+    if (def === "razorpay" && gatewaySettings.enableRazorpay) return "razorpay";
+    if (def === "manual_upi" && gatewaySettings.enableManualUpi) return "manual_upi";
+    if (gatewaySettings.enablePnbQr) return "pnb_qr";
+    if (gatewaySettings.enableRazorpay) return "razorpay";
+    if (gatewaySettings.enableManualUpi) return "manual_upi";
+    return "pnb_qr";
+  };
+
+  const [paymentGatewayType, setPaymentGatewayType] = useState(getInitialGateway);
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [showPricingSchedule, setShowPricingSchedule] = useState(false);
+  const [payingRazorpay, setPayingRazorpay] = useState(false);
+
+  // PNB Dynamic QR State
+  const [pnbOrder, setPnbOrder] = useState(null);
+  const [pnbGenerating, setPnbGenerating] = useState(false);
+  const [pnbSecondsLeft, setPnbSecondsLeft] = useState(600);
+  const [pnbSimulating, setPnbSimulating] = useState(false);
+
+  // Fetch dynamic membership pricing and active gateway settings from backend server
+  useEffect(() => {
+    api("/api/payment/membership-pricing")
+      .then((res) => {
+        if (res.ok && res.pricing) {
+          setPricingInfo(res.pricing);
+          if (res.keyId) setRazorpayKeyId(res.keyId);
+          if (res.paymentGateways) {
+            const gw = res.paymentGateways;
+            const def = gw.defaultGateway || "pnb_qr";
+            if (def === "pnb_qr" && gw.enablePnbQr) setPaymentGatewayType("pnb_qr");
+            else if (def === "razorpay" && gw.enableRazorpay) setPaymentGatewayType("razorpay");
+            else if (def === "manual_upi" && gw.enableManualUpi) setPaymentGatewayType("manual_upi");
+            else if (gw.enablePnbQr) setPaymentGatewayType("pnb_qr");
+            else if (gw.enableRazorpay) setPaymentGatewayType("razorpay");
+            else if (gw.enableManualUpi) setPaymentGatewayType("manual_upi");
+          }
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch server pricing:", err.message));
+  }, []);
+
+  // PNB Dynamic QR 10-Minute Countdown Timer
+  useEffect(() => {
+    if (!pnbOrder || pnbOrder.status !== "PENDING" || pnbSecondsLeft <= 0) return;
+    const interval = setInterval(() => {
+      setPnbSecondsLeft((sec) => {
+        if (sec <= 1) {
+          setPnbOrder((prev) => (prev ? { ...prev, status: "EXPIRED" } : null));
+          return 0;
+        }
+        return sec - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [pnbOrder, pnbSecondsLeft]);
+
+  // PNB Dynamic QR Server-to-Server Live Status Polling
+  useEffect(() => {
+    if (!pnbOrder || pnbOrder.status !== "PENDING") return;
+    let cancelled = false;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await api(`/api/payment/pnb/check-status/${pnbOrder.orderId}`);
+        if (cancelled) return;
+
+        if (res.ok && res.status === "SUCCESS") {
+          clearInterval(pollInterval);
+          setPnbOrder((prev) => (prev ? { ...prev, status: "SUCCESS" } : null));
+          showToast(t(lang, "✓ PNB डायनामिक QR भुगतान प्राप्त! सदस्यता सक्रिय की जा रही है...", "✓ PNB payment confirmed! Activating membership..."));
+
+          // Auto-login newly registered Level 3 member
+          const memberPass = res.member?.password || "123456";
+          persistSession({
+            memberId: res.member.id,
+            memberPass,
+            member: res.member,
+            isAdmin: false,
+            level: 3
+          });
+          await refresh({
+            memberId: res.member.id,
+            memberPass,
+            member: res.member
+          });
+          setRoute("idcard");
+        } else if (res.ok && res.status === "EXPIRED") {
+          setPnbOrder((prev) => (prev ? { ...prev, status: "EXPIRED" } : null));
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        // Polling retry on error
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollInterval);
+    };
+  }, [pnbOrder]);
+
+  const fee = pricingInfo.price;
   const [photoUrl, setPhotoUrl] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Form fields state
+  const [nameHi, setNameHi] = useState("");
+  const [nameEn, setNameEn] = useState("");
+  const [fatherName, setFatherName] = useState("");
+  const [mobile, setMobile] = useState("");
+
+  // Email OTP & Verification state
+  const [email, setEmail] = useState("");
+  const [emailOtp, setEmailOtp] = useState("");
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailSendingOtp, setEmailSendingOtp] = useState(false);
+  const [emailVerifyingOtp, setEmailVerifyingOtp] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailVerificationToken, setEmailVerificationToken] = useState("");
+  const [emailCountdown, setEmailCountdown] = useState(0);
+  const [devOtpNotice, setDevOtpNotice] = useState("");
+
+  // Payment Verification state
+  const [paymentMode, setPaymentMode] = useState("UPI");
+  const [utrNumber, setUtrNumber] = useState("");
+  const [receiptProofUrl, setReceiptProofUrl] = useState("");
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   // Validation errors state
   const [errors, setErrors] = useState({
@@ -456,10 +611,20 @@ export function JoinPage() {
     nameEn: "",
     fatherName: "",
     mobile: "",
-    photo: ""
+    photo: "",
+    email: "",
+    utr: ""
   });
 
-  const upi = `upi://pay?pa=${encodeURIComponent(s.upiId || "")}&pn=${encodeURIComponent(s.upiPayeeName || "")}&cu=INR`;
+  // Countdown timer for Resend OTP
+  useEffect(() => {
+    if (emailCountdown > 0) {
+      const timer = setTimeout(() => setEmailCountdown((c) => c - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [emailCountdown]);
+
+  const upi = `upi://pay?pa=${encodeURIComponent(s.upiId || "")}&pn=${encodeURIComponent(s.upiPayeeName || "")}&am=${fee}&cu=INR`;
 
   const recentList = useMemo(() => {
     const memPayments = (state.payments || []).filter((p) => p.paymentCategory === "membership").slice(0, 4);
@@ -480,8 +645,9 @@ export function JoinPage() {
   }, [state.payments, state.members, s.membershipFeeGeneral]);
 
   // Validation for names (disallow numbers)
-  const handleNameChange = (field, labelHi, labelEn) => (e) => {
+  const handleNameChange = (field, setter, labelHi, labelEn) => (e) => {
     const val = e.target.value;
+    setter(val);
     if (/\d|[\u0966-\u096F]/.test(val)) {
       setErrors((prev) => ({
         ...prev,
@@ -494,13 +660,9 @@ export function JoinPage() {
 
   // Validation for mobile (disallow >10 digits, digits only)
   const handleMobileInput = (e) => {
-    const rawVal = e.target.value;
-    if (rawVal.length > 10) {
-      setErrors((prev) => ({
-        ...prev,
-        mobile: t(lang, "मोबाइल नंबर 10 अंकों से अधिक नहीं हो सकता।", "Mobile number cannot exceed 10 digits.")
-      }));
-    } else if (rawVal.length > 0 && rawVal.length < 10) {
+    const rawVal = e.target.value.replace(/\D/g, "").slice(0, 10);
+    setMobile(rawVal);
+    if (rawVal.length > 0 && rawVal.length < 10) {
       setErrors((prev) => ({
         ...prev,
         mobile: t(lang, "मोबाइल नंबर ठीक 10 अंकों का होना चाहिए।", "Mobile number must be exactly 10 digits.")
@@ -515,7 +677,6 @@ export function JoinPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 1. Allow JPG, JPEG and PNG formats only
     const validTypes = ["image/jpeg", "image/png", "image/jpg"];
     const ext = (file.name || "").split(".").pop().toLowerCase();
     const validExts = ["jpg", "jpeg", "png"];
@@ -533,7 +694,6 @@ export function JoinPage() {
       return;
     }
 
-    // 2. Set maximum image file size to 2 MB
     const maxSize = 2 * 1024 * 1024;
     if (file.size > maxSize) {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -549,15 +709,14 @@ export function JoinPage() {
       return;
     }
 
-    // 3. Maintain passport photo aspect ratio of 7:9 (35 x 45 mm)
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
 
     img.onload = async () => {
       URL.revokeObjectURL(objectUrl);
       const ratio = img.naturalWidth / img.naturalHeight;
-      const targetRatio = 7 / 9; // ~0.7778
-      const tolerance = 0.09; // Allows ~0.69 to 0.87 (standard passport tolerance)
+      const targetRatio = 7 / 9;
+      const tolerance = 0.09;
 
       if (Math.abs(ratio - targetRatio) > tolerance) {
         const msg = t(
@@ -572,7 +731,6 @@ export function JoinPage() {
         return;
       }
 
-      // Validated successfully
       setErrors((prev) => ({ ...prev, photo: "" }));
       try {
         setBusy(true);
@@ -602,12 +760,425 @@ export function JoinPage() {
     img.src = objectUrl;
   };
 
+  // Upload payment receipt proof
+  const handleReceiptProofChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingReceipt(true);
+      const url = await uploadFile(file, session, { folder: "upbms/receipts" });
+      setReceiptProofUrl(url);
+      showToast(t(lang, "भुगतान रसीद स्क्रीनशॉट अपलोड हो गया।", "Receipt screenshot uploaded."));
+    } catch (err) {
+      showToast(err.message || "Upload failed");
+    } finally {
+      setUploadingReceipt(false);
+    }
+  };
+
+  // Send Email Registration OTP
+  const handleSendEmailOtp = async () => {
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      setErrors((prev) => ({
+        ...prev,
+        email: t(lang, "कृपया एक मान्य ईमेल आईडी दर्ज करें।", "Please enter a valid email address.")
+      }));
+      showToast(t(lang, "कृपया एक मान्य ईमेल आईडी दर्ज करें।", "Please enter a valid email address."));
+      return;
+    }
+    setErrors((prev) => ({ ...prev, email: "" }));
+    setEmailSendingOtp(true);
+    setDevOtpNotice("");
+
+    try {
+      const res = await api("/api/auth/send-registration-otp", {
+        method: "POST",
+        body: {
+          email: cleanEmail,
+          name: nameHi || nameEn || "बैंक मित्र"
+        }
+      });
+      setEmailOtpSent(true);
+      setEmailCountdown(60);
+      if (res.devMode && res.devOtp) {
+        setDevOtpNotice(`Dev OTP: ${res.devOtp}`);
+      }
+      showToast(t(lang, res.message || `ओटीपी कोड ${res.emailMasked || cleanEmail} पर भेज दिया गया है।`, res.message || `OTP sent to ${res.emailMasked || cleanEmail}`));
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, email: err.message }));
+      showToast(err.message || "OTP भेजने में त्रुटि हुई");
+    } finally {
+      setEmailSendingOtp(false);
+    }
+  };
+
+  // Verify Email Registration OTP
+  const handleVerifyEmailOtp = async () => {
+    const cleanOtp = String(emailOtp || "").trim();
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      showToast(t(lang, "कृपया सही 6-अंकीय ओटीपी कोड दर्ज करें।", "Please enter the 6-digit OTP code."));
+      return;
+    }
+    setEmailVerifyingOtp(true);
+    try {
+      const res = await api("/api/auth/verify-registration-otp", {
+        method: "POST",
+        body: {
+          email: String(email || "").trim().toLowerCase(),
+          otp: cleanOtp
+        }
+      });
+      setEmailVerified(true);
+      setEmailVerificationToken(res.emailVerificationToken);
+      showToast(t(lang, "✓ ईमेल सफलतापूर्वक सत्यापित हो गया!", "✓ Email verified successfully!"));
+    } catch (err) {
+      showToast(err.message || "ओटीपी सत्यापन विफल");
+    } finally {
+      setEmailVerifyingOtp(false);
+    }
+  };
+
+  // Reset Email to edit
+  const handleResetEmail = () => {
+    setEmailVerified(false);
+    setEmailOtpSent(false);
+    setEmailOtp("");
+    setEmailVerificationToken("");
+    setDevOtpNotice("");
+  };
+
+  // Full 12-month calendar-year pricing schedule
+  const PRICING_SCHEDULE = [
+    { month: "January", monthHi: "जनवरी", price: 600, validity: `Jan 1 – Dec 31, ${currentYear}`, remaining: 12 },
+    { month: "February", monthHi: "फ़रवरी", price: 550, validity: `Feb 1 – Dec 31, ${currentYear}`, remaining: 11 },
+    { month: "March", monthHi: "मार्च", price: 500, validity: `Mar 1 – Dec 31, ${currentYear}`, remaining: 10 },
+    { month: "April", monthHi: "अप्रैल", price: 450, validity: `Apr 1 – Dec 31, ${currentYear}`, remaining: 9 },
+    { month: "May", monthHi: "मई", price: 400, validity: `May 1 – Dec 31, ${currentYear}`, remaining: 8 },
+    { month: "June", monthHi: "जून", price: 350, validity: `Jun 1 – Dec 31, ${currentYear}`, remaining: 7 },
+    { month: "July", monthHi: "जुलाई", price: 300, validity: `Jul 1 – Dec 31, ${currentYear}`, remaining: 6 },
+    { month: "August", monthHi: "अगस्त", price: 250, validity: `Aug 1 – Dec 31, ${currentYear}`, remaining: 5 },
+    { month: "September", monthHi: "सितंबर", price: 200, validity: `Sep 1 – Dec 31, ${currentYear}`, remaining: 4 },
+    { month: "October", monthHi: "अक्टूबर", price: 150, validity: `Oct 1 – Dec 31, ${currentYear}`, remaining: 3 },
+    { month: "November", monthHi: "नवंबर", price: 100, validity: `Nov 1 – Dec 31, ${currentYear}`, remaining: 2 },
+    { month: "December", monthHi: "दिसंबर", price: 50, validity: `Dec 1 – Dec 31, ${currentYear}`, remaining: 1 }
+  ];
+
+  // Razorpay Checkout Handler (Secure Order Creation & Online Payment)
+  const handleRazorpayCheckout = async () => {
+    // 1. Mandatory Email OTP Verification Check
+    if (!emailVerified || !emailVerificationToken) {
+      const msg = t(
+        lang,
+        "⚠️ ऑनलाइन भुगतान से पूर्व ईमेल सत्यापन अनिवार्य है! कृपया 'Send OTP' दबाकर सत्यापित करें।",
+        "⚠️ Please verify your email via OTP before proceeding to payment."
+      );
+      showToast(msg);
+      return;
+    }
+
+    // 2. Validate form fields
+    const form = document.querySelector("#join-membership-form");
+    if (!form) return;
+    const fd = new FormData(form);
+    const raw = Object.fromEntries(fd.entries());
+
+    if (!raw.nameHi || !raw.nameEn || !raw.fatherName || !raw.district || !raw.block || !raw.bankName || !raw.bcCompany || !raw.koCode || !raw.password) {
+      showToast(t(lang, "कृपया फॉर्म के सभी अनिवार्य (*) विवरण भरें।", "Please fill all required form fields."));
+      return;
+    }
+
+    if (!raw.acceptTerms) {
+      showToast(t(lang, "कृपया उत्तर प्रदेश बैंक मित्र संघ के नियमों व शर्तों को स्वीकार करें।", "Please accept the membership terms & conditions."));
+      return;
+    }
+
+    const mobileDigits = String(raw.mobile || mobile || "").trim();
+    if (mobileDigits.length !== 10 || !/^\d{10}$/.test(mobileDigits)) {
+      showToast(t(lang, "मोबाइल नंबर अनिवार्य रूप से ठीक 10 अंकों का होना चाहिए।", "Mobile number must be exactly 10 digits."));
+      return;
+    }
+
+    setPayingRazorpay(true);
+    try {
+      // Create Razorpay Order on server (server calculates dynamic calendar fee)
+      const orderRes = await api("/api/payment/create-order", {
+        method: "POST",
+        body: {
+          nameHi: raw.nameHi || nameHi,
+          nameEn: raw.nameEn || nameEn,
+          email: String(email || raw.email || "").trim().toLowerCase(),
+          mobile: mobileDigits
+        }
+      });
+
+      if (!orderRes.ok || !orderRes.orderId) {
+        throw new Error(orderRes.error || "Failed to create payment order");
+      }
+
+      // Check if Razorpay script is loaded, load dynamically if not present
+      if (typeof window.Razorpay === "undefined") {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://checkout.razorpay.com/v1/checkout.js";
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("Unable to load Razorpay Checkout SDK"));
+          document.body.appendChild(script);
+        });
+      }
+
+      // If server returned testMode simulation (when keys are not configured in .env)
+      if (orderRes.testMode) {
+        const simPaymentId = "pay_sim_" + Date.now();
+        const simSignature = "sim_sig_" + Date.now();
+        const verifyRes = await api("/api/payment/verify", {
+          method: "POST",
+          body: {
+            razorpay_order_id: orderRes.orderId,
+            razorpay_payment_id: simPaymentId,
+            razorpay_signature: simSignature,
+            emailVerificationToken,
+            memberData: {
+              ...raw,
+              nameHi: raw.nameHi || nameHi,
+              nameEn: raw.nameEn || nameEn,
+              fatherName: raw.fatherName || fatherName,
+              mobile: mobileDigits,
+              email: String(email || raw.email || "").trim().toLowerCase(),
+              photoUrl,
+              password: raw.password || "123456"
+            }
+          }
+        });
+
+        if (!verifyRes.ok) throw new Error(verifyRes.error || "Payment verification failed");
+
+        showToast(t(lang, `✓ ${verifyRes.message || "सदस्यता सक्रिय!"}`, `✓ ${verifyRes.message || "Membership activated!"}`));
+
+        persistSession({
+          memberId: verifyRes.member.id,
+          memberPass: raw.password || "123456",
+          member: verifyRes.member,
+          isAdmin: false,
+          level: 3
+        });
+        await refresh({
+          memberId: verifyRes.member.id,
+          memberPass: raw.password || "123456",
+          member: verifyRes.member
+        });
+        setRoute("idcard");
+        return;
+      }
+
+      // Live Razorpay Checkout Options
+      const options = {
+        key: orderRes.keyId || razorpayKeyId,
+        amount: orderRes.amountPaise,
+        currency: orderRes.currency || "INR",
+        name: "उत्तर प्रदेश बैंक मित्र संघ (UPBMS)",
+        description: pricingInfo.descriptionEn || `Annual Membership (${pricingInfo.validityDisplayEn})`,
+        image: "/images/upbms-crest.svg",
+        order_id: orderRes.orderId,
+        prefill: {
+          name: raw.nameEn || raw.nameHi,
+          email: String(email || raw.email || "").trim().toLowerCase(),
+          contact: mobileDigits
+        },
+        theme: {
+          color: "#0a2252"
+        },
+        handler: async (response) => {
+          try {
+            setBusy(true);
+            const verifyRes = await api("/api/payment/verify", {
+              method: "POST",
+              body: {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                emailVerificationToken,
+                memberData: {
+                  ...raw,
+                  nameHi: raw.nameHi || nameHi,
+                  nameEn: raw.nameEn || nameEn,
+                  fatherName: raw.fatherName || fatherName,
+                  mobile: mobileDigits,
+                  email: String(email || raw.email || "").trim().toLowerCase(),
+                  photoUrl,
+                  password: raw.password || "123456"
+                }
+              }
+            });
+
+            if (!verifyRes.ok) throw new Error(verifyRes.error || "Payment verification failed");
+
+            showToast(t(lang, `✓ सदस्यता सक्रिय! रसीद: ${verifyRes.payment.receiptNo}`, `✓ Membership activated! Receipt: ${verifyRes.payment.receiptNo}`));
+
+            persistSession({
+              memberId: verifyRes.member.id,
+              memberPass: raw.password || "123456",
+              member: verifyRes.member,
+              isAdmin: false,
+              level: 3
+            });
+            await refresh({
+              memberId: verifyRes.member.id,
+              memberPass: raw.password || "123456",
+              member: verifyRes.member
+            });
+            setRoute("idcard");
+          } catch (vErr) {
+            showToast(vErr.message || "Payment verification error");
+          } finally {
+            setBusy(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setPayingRazorpay(false);
+            api("/api/payment/record-failed", {
+              method: "POST",
+              body: {
+                orderId: orderRes.orderId,
+                error: { message: "Checkout cancelled by user" },
+                memberInfo: { nameHi: raw.nameHi, nameEn: raw.nameEn, mobile: mobileDigits }
+              }
+            }).catch(() => {});
+            showToast(t(lang, "भुगतान प्रक्रिया रद्द कर दी गई। आप कभी भी पुनः प्रयास कर सकते हैं।", "Payment cancelled. You can retry whenever ready."));
+          }
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (response) => {
+        api("/api/payment/record-failed", {
+          method: "POST",
+          body: {
+            orderId: orderRes.orderId,
+            paymentId: response.error?.metadata?.payment_id,
+            error: response.error || {},
+            memberInfo: { nameHi: raw.nameHi, nameEn: raw.nameEn, mobile: mobileDigits }
+          }
+        }).catch(() => {});
+        showToast(t(lang, `भुगतान विफल: ${response.error?.description || "त्रुटि"}`, `Payment failed: ${response.error?.description || "Error"}`));
+        setPayingRazorpay(false);
+      });
+      rzp.open();
+    } catch (err) {
+      showToast(err.message || "Payment initiation error");
+      setPayingRazorpay(false);
+    }
+  };
+
+  // PNB Dynamic QR Generation Handler
+  const handleGeneratePnbQr = async () => {
+    if (!emailVerified || !emailVerificationToken) {
+      showToast(t(lang, "⚠️ डायनामिक QR कोड जनरेट करने से पूर्व ईमेल सत्यापन अनिवार्य है!", "⚠️ Please verify your email via OTP before generating dynamic QR code."));
+      return;
+    }
+
+    const form = document.querySelector("#join-membership-form");
+    if (!form) return;
+    const fd = new FormData(form);
+    const raw = Object.fromEntries(fd.entries());
+
+    if (!raw.nameHi || !raw.nameEn || !raw.fatherName || !raw.district || !raw.block || !raw.bankName || !raw.bcCompany || !raw.koCode || !raw.password) {
+      showToast(t(lang, "कृपया फॉर्म के सभी अनिवार्य (*) विवरण भरें।", "Please fill all required form fields."));
+      return;
+    }
+
+    if (!raw.acceptTerms) {
+      showToast(t(lang, "कृपया उत्तर प्रदेश बैंक मित्र संघ के नियमों व शर्तों को स्वीकार करें।", "Please accept the membership terms & conditions."));
+      return;
+    }
+
+    const mobileDigits = String(raw.mobile || mobile || "").trim();
+    if (mobileDigits.length !== 10 || !/^\d{10}$/.test(mobileDigits)) {
+      showToast(t(lang, "मोबाइल नंबर ठीक 10 अंकों का होना चाहिए।", "Mobile number must be exactly 10 digits."));
+      return;
+    }
+
+    setPnbGenerating(true);
+    try {
+      const res = await api("/api/payment/pnb/create-order", {
+        method: "POST",
+        body: {
+          emailVerificationToken,
+          memberData: {
+            ...raw,
+            nameHi: raw.nameHi || nameHi,
+            nameEn: raw.nameEn || nameEn,
+            fatherName: raw.fatherName || fatherName,
+            mobile: mobileDigits,
+            email: String(email || raw.email || "").trim().toLowerCase(),
+            photoUrl,
+            password: raw.password || "123456"
+          }
+        }
+      });
+
+      if (!res.ok || !res.orderId) {
+        throw new Error(res.error || "Failed to generate dynamic QR order");
+      }
+
+      setPnbOrder(res);
+      setPnbSecondsLeft(res.expiresInSeconds || 600);
+      showToast(t(lang, "✓ PNB डायनामिक QR कोड तैयार! कृपया किसी भी UPI ऐप से स्कैन करें।", "✓ PNB Dynamic QR generated! Scan with any UPI app."));
+    } catch (err) {
+      showToast(err.message || "Error generating PNB dynamic QR");
+    } finally {
+      setPnbGenerating(false);
+    }
+  };
+
+  // Simulate Instant PNB Payment in Test / Sandbox Mode
+  const handleSimulatePnbPayment = async () => {
+    if (!pnbOrder?.orderId || pnbSimulating) return;
+    setPnbSimulating(true);
+    try {
+      await api("/api/payment/pnb/simulate-pay", {
+        method: "POST",
+        body: { orderId: pnbOrder.orderId }
+      });
+      showToast(t(lang, "⚡ परीक्षण भुगतान सिमुलेट किया गया! स्थिति सत्यापन जारी...", "⚡ Test payment simulated! Verifying payment status..."));
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setPnbSimulating(false);
+    }
+  };
+
   async function onSubmit(e) {
     e.preventDefault();
     const fd = new FormData(e.target);
     const raw = Object.fromEntries(fd.entries());
 
-    // Validate no numbers in names
+    // 1. Mandatory Email OTP Verification Check
+    if (!emailVerified || !emailVerificationToken) {
+      const msg = t(
+        lang,
+        "⚠️ पंजीकरण से पहले ईमेल सत्यापन अनिवार्य है! कृपया ईमेल बॉक्स में 'Send OTP' दबाकर सत्यापित करें।",
+        "⚠️ Email verification is required before registration! Please verify via OTP."
+      );
+      showToast(msg);
+      return;
+    }
+
+    // 2. Mandatory Payment UTR Check (for manual UPI payment)
+    const cleanUtr = String(utrNumber || raw.utrNumber || "").trim();
+    if (!cleanUtr || cleanUtr.length < 6) {
+      const msg = t(
+        lang,
+        "⚠️ भुगतान का 12-अंकीय UTR / Transaction No दर्ज करना अनिवार्य है।",
+        "⚠️ Valid UTR / Transaction reference number is required."
+      );
+      setErrors((prev) => ({ ...prev, utr: msg }));
+      showToast(msg);
+      return;
+    }
+
+    // 3. Names validation
     if (/\d|[\u0966-\u096F]/.test(raw.nameHi)) {
       const msg = t(lang, "पूरा नाम (हिंदी) में अंकों की अनुमति नहीं है।", "Numbers are not allowed in Hindi name.");
       setErrors((prev) => ({ ...prev, nameHi: msg }));
@@ -627,8 +1198,8 @@ export function JoinPage() {
       return;
     }
 
-    // Validate mobile exactly 10 digits
-    const mobileDigits = String(raw.mobile || "").trim();
+    // 4. Mobile validation
+    const mobileDigits = String(raw.mobile || mobile || "").trim();
     if (mobileDigits.length !== 10 || !/^\d{10}$/.test(mobileDigits)) {
       const msg = t(lang, "मोबाइल नंबर अनिवार्य रूप से ठीक 10 अंकों का होना चाहिए।", "Mobile number must be exactly 10 digits.");
       setErrors((prev) => ({ ...prev, mobile: msg }));
@@ -642,39 +1213,160 @@ export function JoinPage() {
         method: "POST",
         body: {
           ...raw,
-          email: String(raw.email || "").trim(),
+          nameHi: raw.nameHi || nameHi,
+          nameEn: raw.nameEn || nameEn,
+          fatherName: raw.fatherName || fatherName,
+          mobile: mobileDigits,
+          email: String(email || raw.email || "").trim().toLowerCase(),
+          emailVerificationToken,
           photoUrl,
           isCoreMember: false,
           feePaid: Number(fee),
-          instantDemoVerify: Boolean(raw.instantDemoVerify)
+          paymentMode,
+          utrNumber: cleanUtr,
+          receiptProofUrl
         }
       });
-      showToast(t(lang, `पंजीकरण पूर्ण: ${result.member.memberCode}`, `Registered: ${result.member.memberCode}`));
-      if (result.member.status === "active") {
-        persistSession({ memberId: result.member.id, memberPass: raw.password, member: result.member, isAdmin: false });
-        await refresh({ memberId: result.member.id, memberPass: raw.password, member: result.member });
-        setRoute("idcard");
-      } else {
-        await refresh();
-      }
+
+      showToast(t(lang, `✓ सदस्यता पंजीकरण सफल! सदस्य कोड: ${result.member.memberCode}`, `✓ Registration successful! Member Code: ${result.member.memberCode}`));
+
+      // Auto-login newly registered Level 3 member
+      const memberPass = raw.password || "123456";
+      persistSession({
+        memberId: result.member.id,
+        memberPass,
+        member: result.member,
+        isAdmin: false,
+        level: 3
+      });
+      await refresh({
+        memberId: result.member.id,
+        memberPass,
+        member: result.member
+      });
+      setRoute("idcard");
     } catch (err) {
-      showToast(err.message);
+      showToast(err.message || "Registration failed");
     } finally {
       setBusy(false);
     }
   }
 
+  const isFormReady = (paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay")
+    ? (emailVerified && Boolean(emailVerificationToken))
+    : (emailVerified && utrNumber.trim().length >= 6);
+
   return (
     <section className="section-block"><div className="container">
       <SectionHead
         eyebrow={`✍️ ${t(lang, "ऑनलाइन सदस्यता पोर्टल", "ONLINE MEMBERSHIP PORTAL")}`}
-        title={t(lang, "बैंक मित्र सदस्यता पंजीकरण एवं वार्षिक शुल्क भुगतान", "Bank Mitra Membership Registration & Annual Fee Payment")}
-        sub={t(lang, "पंजीकरण पूर्ण करते ही अपना डिजिटल पहचान पत्र, नियुक्ति पत्र एवं शुल्क रसीद प्राप्त करें।", "Receive your digital ID card, appointment letter and fee receipt immediately upon registration.")}
+        title={t(lang, "बैंक मित्र सदस्यता पंजीकरण एवं वार्षिक शुल्क सत्यापन", "Bank Mitra Membership Registration & Annual Fee Payment")}
+        sub={t(lang, "ईमेल व भुगतान सत्यापन पूर्ण होते ही डिजिटल पहचान पत्र, नियुक्ति पत्र एवं आधिकारिक रसीद तत्काल जारी की जाती है।", "Receive your verified digital ID card, appointment letter and official receipt immediately upon email and fee verification.")}
       />
+
+      {/* 3-Step Guided Progress Card */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <div style={{
+          background: emailVerified ? "#f0fdf4" : "#eff6ff",
+          border: `1.5px solid ${emailVerified ? "#16a34a" : "#2563eb"}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12
+        }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: emailVerified ? "#16a34a" : "#2563eb",
+            color: "#ffffff",
+            display: "grid",
+            placeItems: "center",
+            fontWeight: 900
+          }}>
+            {emailVerified ? "✓" : "1"}
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: emailVerified ? "#16a34a" : "#1e3a8a" }}>
+              {t(lang, "चरण 1: व्यक्तिगत विवरण व ईमेल OTP", "Step 1: Details & Email OTP")}
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+              {emailVerified ? t(lang, "✓ ईमेल सत्यापित", "✓ Email Verified") : t(lang, "ईमेल पर 6-अंकीय कोड सत्यापित करें", "Verify 6-digit code sent to email")}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          background: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#f0fdf4" : "#fefce8",
+          border: `1.5px solid ${((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#ca8a04"}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12
+        }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#ca8a04",
+            color: "#ffffff",
+            display: "grid",
+            placeItems: "center",
+            fontWeight: 900
+          }}>
+            {((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "✓" : "2"}
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#854d0e" }}>
+              {t(lang, `चरण 2: ₹${fee} कैलेंडर वर्ष सदस्यता शुल्क`, `Step 2: ₹${fee} Calendar-Year Fee`)}
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+              {paymentGatewayType === "pnb_qr"
+                ? t(lang, `PNB डायनामिक UPI QR (वैधता: 31 दिसंबर ${pricingInfo.year})`, `PNB Dynamic UPI QR (Valid till Dec 31, ${pricingInfo.year})`)
+                : paymentGatewayType === "razorpay"
+                ? t(lang, `रेज़रपे सुरक्षित गेटवे (वैधता: 31 दिसंबर ${pricingInfo.year})`, `Razorpay Secure Gateway (Valid till Dec 31, ${pricingInfo.year})`)
+                : t(lang, `मैनुअल UPI QR व 12-अंकीय UTR`, `Manual UPI QR & 12-digit UTR`)}
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          background: isFormReady ? "#f0fdf4" : "#f8fafc",
+          border: `1.5px solid ${isFormReady ? "#16a34a" : "#cbd5e1"}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12
+        }}>
+          <div style={{
+            width: 36,
+            height: 36,
+            borderRadius: "50%",
+            background: isFormReady ? "#16a34a" : "#94a3b8",
+            color: "#ffffff",
+            display: "grid",
+            placeItems: "center",
+            fontWeight: 900
+          }}>
+            3
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: isFormReady ? "#16a34a" : "#475569" }}>
+              {t(lang, "चरण 3: नियम स्वीकृति व Level 3 सदस्यता", "Step 3: Terms & Level 3 Membership")}
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+              {t(lang, "तत्काल पहचान पत्र व रसीद प्राप्त करें", "Instant digital ID card & appointment letter")}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="join-layout-grid">
         {/* Left Column: Registration Form */}
-        <form className="card-panel" onSubmit={onSubmit}>
+        <form id="join-membership-form" className="card-panel" onSubmit={onSubmit}>
           <h3 style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--primary)", marginBottom: 20, fontSize: "1.15rem", fontWeight: 900 }}>
             ✍️ {t(lang, "नया बैंक मित्र सदस्यता आवेदन प्रपत्र", "New Bank Mitra Membership Application Form")}
           </h3>
@@ -683,56 +1375,174 @@ export function JoinPage() {
             <Field
               label={t(lang, "पूरा नाम (हिंदी में) *", "Full Name (Hindi) *")}
               name="nameHi"
+              value={nameHi}
               placeholder={t(lang, "उदा: सुरेश चंद्र मौर्य", "e.g. Suresh Chandra Maurya")}
               required
               error={errors.nameHi}
-              onChange={handleNameChange("nameHi", "पूरा नाम (हिंदी)", "Hindi name")}
+              onChange={handleNameChange("nameHi", setNameHi, "पूरा नाम (हिंदी)", "Hindi name")}
             />
             <Field
               label={t(lang, "पूरा नाम (अंग्रेज़ी में) *", "Full Name (English) *")}
               name="nameEn"
+              value={nameEn}
               placeholder="e.g. Suresh Chandra Maurya"
               required
               error={errors.nameEn}
-              onChange={handleNameChange("nameEn", "पूरा नाम (अंग्रेज़ी)", "English name")}
+              onChange={handleNameChange("nameEn", setNameEn, "पूरा नाम (अंग्रेज़ी)", "English name")}
             />
             <Field
               label={t(lang, "पिता का नाम *", "Father's Name *")}
               name="fatherName"
+              value={fatherName}
+              placeholder={t(lang, "उदा: राम प्रसाद मौर्य", "e.g. Ram Prasad Maurya")}
               required
               error={errors.fatherName}
-              onChange={handleNameChange("fatherName", "पिता का नाम", "Father's name")}
+              onChange={handleNameChange("fatherName", setFatherName, "पिता का नाम", "Father's name")}
             />
             <Field
               label={t(lang, "मोबाइल नंबर (WhatsApp) *", "Mobile Number (WhatsApp) *")}
               name="mobile"
+              value={mobile}
               placeholder={t(lang, "10 अंकों का मोबाइल नंबर", "10-digit mobile number")}
               required
               maxLength={10}
               error={errors.mobile}
               onChange={handleMobileInput}
             />
+
+            {/* EMAIL VERIFICATION SECTION (MANDATORY OTP) */}
+            <div className="form-group full" style={{
+              background: emailVerified ? "#f0fdf4" : "#f8fafc",
+              border: `1.5px solid ${emailVerified ? "#16a34a" : "#cbd5e1"}`,
+              borderRadius: 12,
+              padding: "16px",
+              marginTop: 4
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: "0.95rem", color: emailVerified ? "#16a34a" : "var(--primary)" }}>
+                  ✉️ {t(lang, "ईमेल पता एवं सुरक्षा सत्यापन *", "Email Address & OTP Verification *")}
+                </span>
+                {emailVerified && (
+                  <span style={{ background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800 }}>
+                    ✓ {t(lang, "ईमेल सत्यापित (Verified)", "Email Verified")}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <input
+                  type="email"
+                  name="email"
+                  className={`form-control ${errors.email ? "is-invalid" : ""}`}
+                  placeholder="e.g. yourname@gmail.com"
+                  value={email}
+                  readOnly={emailVerified}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailOtpSent) setEmailOtpSent(false);
+                    setDevOtpNotice("");
+                    setErrors((prev) => ({ ...prev, email: "" }));
+                  }}
+                  required
+                  style={{ flex: "1 1 240px", backgroundColor: emailVerified ? "#f0fdf4" : "#ffffff" }}
+                />
+
+                {!emailVerified ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={emailSendingOtp || !email || emailCountdown > 0}
+                    onClick={handleSendEmailOtp}
+                    style={{ whiteSpace: "nowrap", minWidth: 130 }}
+                  >
+                    {emailSendingOtp
+                      ? t(lang, "भेज रहे हैं...", "Sending...")
+                      : emailCountdown > 0
+                      ? `${t(lang, "पुनः भेजें", "Resend")} (${emailCountdown}s)`
+                      : emailOtpSent
+                      ? t(lang, "पुनः OTP भेजें", "Resend OTP")
+                      : t(lang, "ओटीपी भेजें (Send OTP)", "Send OTP")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={handleResetEmail}
+                    title={t(lang, "ईमेल बदलें", "Change Email")}
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    ✏️ {t(lang, "ईमेल बदलें", "Change Email")}
+                  </button>
+                )}
+              </div>
+
+              {errors.email && (
+                <div style={{ color: "var(--danger)", fontSize: "0.82rem", fontWeight: 700, marginTop: 6 }}>
+                  {errors.email}
+                </div>
+              )}
+
+              {/* Dev Mode OTP helper banner */}
+              {devOtpNotice && !emailVerified && (
+                <div style={{ marginTop: 8, padding: "6px 12px", background: "#fef3c7", border: "1px dashed #d97706", borderRadius: 8, fontSize: "0.82rem", color: "#92400e", fontWeight: 700 }}>
+                  ⚡ {devOtpNotice} ({t(lang, "डेमो परीक्षण हेतु यह कोड नीचे दर्ज करें", "Enter this code below for test verification")})
+                </div>
+              )}
+
+              {/* OTP Input row (revealed when OTP sent and not yet verified) */}
+              {emailOtpSent && !emailVerified && (
+                <div style={{ marginTop: 12, padding: 12, background: "#ffffff", borderRadius: 8, border: "1px solid #bfdbfe" }}>
+                  <div style={{ fontSize: "0.84rem", color: "#1e40af", fontWeight: 700, marginBottom: 8 }}>
+                    📩 {t(lang, `आपके ईमेल (${email}) पर 6-अंकीय सत्यापन कोड भेजा गया है। कोड दर्ज करें:`, `A 6-digit verification code was sent to ${email}. Enter code:`)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={emailOtp}
+                      onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="6-Digit OTP (उदा: 542109)"
+                      className="form-control"
+                      style={{ maxWidth: 220, fontSize: "1.1rem", letterSpacing: 3, fontWeight: 900, textAlign: "center" }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-accent"
+                      disabled={emailVerifyingOtp || emailOtp.length !== 6}
+                      onClick={handleVerifyEmailOtp}
+                      style={{ whiteSpace: "nowrap", padding: "10px 20px", fontWeight: 800 }}
+                    >
+                      {emailVerifyingOtp ? t(lang, "सत्यापित कर रहे हैं...", "Verifying...") : `✓ ${t(lang, "सत्यापित करें (Verify)", "Verify OTP")}`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <label className="form-group">
               {t(lang, "जनपद *", "District *")}
               <select className="form-control" name="district" required>
                 {state.meta.districts.map((d) => <option key={d} value={d}>{localizeDual(d, lang)}</option>)}
               </select>
             </label>
-            <Field label={t(lang, "ब्लॉक / केंद्र का नाम *", "Block / Center Name *")} name="block" required />
+
+            <Field label={t(lang, "ब्लॉक / केंद्र का नाम *", "Block / Center Name *")} name="block" placeholder="उदा: सरसौल / कल्याणपुर" required />
+
             <label className="form-group">
               {t(lang, "संबंधित बैंक *", "Associated Bank *")}
               <select className="form-control" name="bankName" required>
                 {state.meta.banks.map((b) => <option key={b}>{b}</option>)}
               </select>
             </label>
+
             <label className="form-group">
               {t(lang, "कॉर्पोरेट बीसी कंपनी *", "Corporate BC Company *")}
               <select className="form-control" name="bcCompany" required>
                 {state.meta.bcCompanies.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
+
             <Field label={t(lang, "केओ / सीएसपी कोड *", "KO / CSP Code *")} name="koCode" placeholder="e.g. SBI-KNP-5501" required />
-            <Field label={t(lang, "ईमेल आईडी *", "Email ID *")} name="email" type="email" placeholder="e.g. name@gmail.com" required />
             <Field label={t(lang, "लॉगिन पासवर्ड बनाएँ *", "Create Login Password *")} name="password" type="password" placeholder={t(lang, "कम से कम 4 अक्षर", "Minimum 4 characters")} required minLength={4} />
 
             {/* Passport Size Photo with Specific Validation */}
@@ -756,36 +1566,600 @@ export function JoinPage() {
               )}
             </label>
 
-            {/* Dropdown showing ONLY: सक्रिय बैंक मित्र सदस्य — ₹251 / वर्ष */}
-            <label className="form-group full">
-              {t(lang, "सदस्यता श्रेणी एवं शुल्क चुनें *", "Select Membership Category & Fee *")}
-              <select className="form-control" value="general" readOnly>
-                <option value="general">
-                  {t(lang, `सक्रिय बैंक मित्र सदस्य — ₹${fee} / वर्ष`, `Active Bank Mitra Member — ₹${fee} / year`)}
-                </option>
-              </select>
-            </label>
+            {/* 1. CALENDAR-YEAR DYNAMIC MEMBERSHIP PRICING BREAKDOWN CARD */}
+            <div className="form-group full" style={{
+              background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
+              border: "1.5px solid #10b981",
+              borderRadius: 14,
+              padding: 16
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "1.2rem" }}>📅</span>
+                    <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#065f46" }}>
+                      {t(lang, `कैलेंडर वर्ष सदस्यता शुल्क प्रणाली (${pricingInfo.year})`, `Calendar-Year Membership System (${pricingInfo.year})`)}
+                    </span>
+                    <span style={{ background: "#d1fae5", color: "#047857", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 800 }}>
+                      ₹50 / {t(lang, "माह", "month")}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "0.84rem", color: "#047857", marginTop: 4, fontWeight: 700 }}>
+                    {t(
+                      lang,
+                      `वर्तमान खरीद माह: ${pricingInfo.monthNameHi} • शेष अवधि: ${pricingInfo.remainingMonths} माह (${pricingInfo.validityDisplayHi})`,
+                      `Purchase Month: ${pricingInfo.monthNameEn} • Remaining: ${pricingInfo.remainingMonths} months (${pricingInfo.validityDisplayEn})`
+                    )}
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "#4b5563", marginTop: 2 }}>
+                    {t(lang, "गणना सूत्र:", "Formula:")} <code>price = (13 - {pricingInfo.currentMonth}) × ₹50 = ₹{pricingInfo.price}</code>
+                  </div>
+                </div>
 
-            <div className="form-group full join-pay-box">
-              <div className="join-pay-qr-wrap" dangerouslySetInnerHTML={{ __html: qrSvg(upi, 110) }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "1.15rem", fontWeight: 900, color: "var(--primary)", marginBottom: 4 }}>
-                  {t(lang, "देय सदस्यता शुल्क", "Membership Fee Due")}: ₹{fee}
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "0.78rem", color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
+                    {t(lang, "कुल देय शुल्क", "Total Payable Fee")}
+                  </div>
+                  <div style={{ fontSize: "1.85rem", fontWeight: 900, color: "#065f46", lineHeight: 1 }}>
+                    ₹{pricingInfo.price}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 800, marginTop: 3 }}>
+                    ✓ {t(lang, `31 दिसंबर ${pricingInfo.year} तक पूर्ण वैध`, `Valid till Dec 31, ${pricingInfo.year}`)}
+                  </div>
                 </div>
-                <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 2 }}>
-                  UPI ID: <b>{s.upiId}</b>
-                </div>
-                <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 10 }}>
-                  {t(lang, "बैंक खाता", "Bank Account")}: <b>{s.bankAccountNumber} ({s.bankIfsc})</b>
-                </div>
-                <input className="form-control" name="utrNumber" placeholder={t(lang, "भुगतान का 12-अंकीय यूटीआर नंबर (डेमो में वैकल्पिक)", "12-digit UTR Number (Optional in demo)")} />
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", fontWeight: 800, color: "#15803d", marginTop: 8, cursor: "pointer" }}>
-                  <input type="checkbox" name="instantDemoVerify" defaultChecked />
-                  <span>⚡ {t(lang, "डेमो मोड: तुरंत भुगतान सत्यापित कर पहचान पत्र व नियुक्ति पत्र जारी करें", "Demo: verify payment instantly & issue ID card & letter")}</span>
-                </label>
               </div>
+
+              {/* Toggle 12-Month Schedule Modal/Table */}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #6ee7b7", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPricingSchedule(!showPricingSchedule)}
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #10b981",
+                    color: "#065f46",
+                    padding: "5px 12px",
+                    borderRadius: 8,
+                    fontSize: "0.78rem",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6
+                  }}
+                >
+                  <span>📊</span>
+                  <span>{showPricingSchedule ? t(lang, "मूल्य तालिका छिपाएं", "Hide Pricing Table") : t(lang, "सभी 12 महीनों की शुल्क तालिका देखें (₹50/माह)", "View Full 12-Month Pricing Structure")}</span>
+                </button>
+                <span style={{ fontSize: "0.76rem", color: "#6b7280" }}>
+                  🔒 {t(lang, "सर्वर द्वारा सुरक्षित गतिशील गणना", "Dynamically calculated by backend server")}
+                </span>
+              </div>
+
+              {showPricingSchedule && (
+                <div style={{ marginTop: 12, background: "#ffffff", borderRadius: 10, border: "1px solid #cbd5e1", overflowX: "auto", fontSize: "0.78rem" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                    <thead style={{ background: "#f1f5f9", fontWeight: 900, color: "#1e293b" }}>
+                      <tr>
+                        <th style={{ padding: "8px 10px" }}>{t(lang, "खरीद माह (Purchase Month)", "Purchase Month")}</th>
+                        <th style={{ padding: "8px 10px" }}>{t(lang, "शेष माह (Months)", "Remaining")}</th>
+                        <th style={{ padding: "8px 10px" }}>{t(lang, "सदस्यता शुल्क (Price)", "Price")}</th>
+                        <th style={{ padding: "8px 10px" }}>{t(lang, "वैधता (Validity)", "Validity")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PRICING_SCHEDULE.map((item, idx) => {
+                        const isCurrent = idx + 1 === pricingInfo.currentMonth;
+                        return (
+                          <tr key={item.month} style={{
+                            background: isCurrent ? "#dcfce7" : idx % 2 === 0 ? "#f8fafc" : "#ffffff",
+                            fontWeight: isCurrent ? 900 : 500,
+                            color: isCurrent ? "#166534" : "#334155"
+                          }}>
+                            <td style={{ padding: "6px 10px" }}>
+                              {lang === "hi" ? item.monthHi : item.month} {isCurrent && <span style={{ background: "#16a34a", color: "#fff", padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem" }}>Current Month</span>}
+                            </td>
+                            <td style={{ padding: "6px 10px" }}>{item.remaining} {t(lang, "माह", "months")}</td>
+                            <td style={{ padding: "6px 10px", fontWeight: 800 }}>₹{item.price}</td>
+                            <td style={{ padding: "6px 10px" }}>{item.validity}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
+            {/* 2. PAYMENT METHOD SELECTION TABS */}
+            <div className="form-group full" style={{ marginTop: 4 }}>
+              <label style={{ fontSize: "0.86rem", fontWeight: 900, color: "var(--primary)", marginBottom: 8, display: "block" }}>
+                💳 {t(lang, "भुगतान विधि चुनें (Payment Method) *", "Choose Payment Gateway / Method *")}
+              </label>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 14 }}>
+                {gatewaySettings.enablePnbQr && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGatewayType("pnb_qr")}
+                    style={{
+                      background: paymentGatewayType === "pnb_qr" ? "#eff6ff" : "#ffffff",
+                      border: `2px solid ${paymentGatewayType === "pnb_qr" ? "#2563eb" : "#cbd5e1"}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ fontSize: "1.4rem" }}>🏛️</div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "pnb_qr" ? "#1e40af" : "#1e293b" }}>
+                        PNB Dynamic QR
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                        {t(lang, "आधिकारिक बैंक QR (UPI)", "Official Bank QR (UPI)")}
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {gatewaySettings.enableRazorpay && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGatewayType("razorpay")}
+                    style={{
+                      background: paymentGatewayType === "razorpay" ? "#eff6ff" : "#ffffff",
+                      border: `2px solid ${paymentGatewayType === "razorpay" ? "#2563eb" : "#cbd5e1"}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ fontSize: "1.4rem" }}>⚡</div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "razorpay" ? "#1e40af" : "#1e293b" }}>
+                        Razorpay Checkout
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                        UPI, Cards, NetBanking ({t(lang, "तत्काल सक्रियण", "Instant Activation")})
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {gatewaySettings.enableManualUpi && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentGatewayType("manual_upi")}
+                    style={{
+                      background: paymentGatewayType === "manual_upi" ? "#eff6ff" : "#ffffff",
+                      border: `2px solid ${paymentGatewayType === "manual_upi" ? "#2563eb" : "#cbd5e1"}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ fontSize: "1.4rem" }}>📱</div>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "manual_upi" ? "#1e40af" : "#1e293b" }}>
+                        Manual UPI QR & UTR
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                        {t(lang, "QR स्कैन करें व UTR नंबर दर्ज करें", "Scan QR & Enter 12-digit UTR")}
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              {/* TAB CONTENT A: PNB DYNAMIC QR */}
+              {paymentGatewayType === "pnb_qr" && (
+                <div style={{
+                  border: "2px solid #2563eb",
+                  borderRadius: 14,
+                  padding: 20,
+                  background: "#ffffff"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1e3a8a", display: "flex", alignItems: "center", gap: 8 }}>
+                        <span>🏛️</span>
+                        <span>{t(lang, "पंजाब नैशनल बैंक (PNB) डायनामिक UPI QR", "Punjab National Bank (PNB) Dynamic UPI QR")}</span>
+                      </div>
+                      <div style={{ fontSize: "0.82rem", color: "#64748b", marginTop: 2 }}>
+                        {t(lang, `देय सदस्यता शुल्क: ₹${fee} (${pricingInfo.remainingMonths} माह @ ₹50/माह • 31 दिसंबर ${pricingInfo.year} तक वैध)`, `Payable Membership Fee: ₹${fee} (${pricingInfo.remainingMonths} months @ ₹50/mo • Valid till Dec 31, ${pricingInfo.year})`)}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#dbeafe", color: "#1e40af", padding: "4px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
+                      <span>🔒</span>
+                      <span>NPCI & PNB Server-Verified</span>
+                    </div>
+                  </div>
+
+                  {!pnbOrder ? (
+                    /* Initial State: Button to Generate Dynamic QR */
+                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#f8fafc", borderRadius: 12, border: "1px dashed #93c5fd" }}>
+                      <div style={{ fontSize: "2.2rem", marginBottom: 8 }}>📲</div>
+                      <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b", marginBottom: 4 }}>
+                        {t(lang, `₹${fee} की सटीक राशि का PNB डायनामिक QR कोड तैयार करें`, `Generate Dynamic UPI QR Code for ₹${fee}`)}
+                      </div>
+                      <div style={{ fontSize: "0.84rem", color: "#64748b", maxWidth: 520, margin: "0 auto 16px auto" }}>
+                        {t(
+                          lang,
+                          "प्रत्येक आवेदक के लिए एक अनूठा, समयबद्ध UPI QR कोड तैयार किया जाता है जिसमें सदस्यता शुल्क की सटीक राशि एम्बेड होती है। किसी भी UPI ऐप (GPay, PhonePe, Paytm, BHIM) से स्कैन करते ही सर्वर स्वचालित रूप से भुगतान की पुष्टि करेगा।",
+                          "A unique, time-limited dynamic UPI QR code containing the exact membership fee will be generated. Once scanned with any UPI app, our server automatically detects confirmation in real-time."
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-accent btn-lg"
+                        disabled={pnbGenerating || !emailVerified}
+                        onClick={handleGeneratePnbQr}
+                        style={{
+                          padding: "13px 26px",
+                          fontSize: "1.02rem",
+                          fontWeight: 900,
+                          cursor: emailVerified ? "pointer" : "not-allowed",
+                          opacity: emailVerified ? 1 : 0.65,
+                          boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)"
+                        }}
+                      >
+                        {pnbGenerating ? (
+                          <>
+                            <span className="login-spinner"></span>
+                            <span>{t(lang, "PNB डायनामिक QR कोड तैयार किया जा रहा है...", "Generating PNB Dynamic QR...")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>⚡</span>
+                            <span>{t(lang, `PNB डायनामिक QR कोड जनरेट करें (देय: ₹${fee})`, `Generate PNB Dynamic QR (Payable: ₹${fee})`)}</span>
+                          </>
+                        )}
+                      </button>
+
+                      {!emailVerified && (
+                        <div style={{ marginTop: 12, fontSize: "0.82rem", color: "#b45309", fontWeight: 700 }}>
+                          ⚠️ {t(lang, "डायनामिक QR जनरेट करने से पूर्व ऊपर फॉर्म में 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above before generating the dynamic QR code.")}
+                        </div>
+                      )}
+                    </div>
+                  ) : pnbOrder.status === "EXPIRED" ? (
+                    /* Expired State */
+                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#fef2f2", borderRadius: 12, border: "1px solid #fca5a5" }}>
+                      <div style={{ fontSize: "2rem", marginBottom: 6 }}>⏱️</div>
+                      <div style={{ fontWeight: 800, fontSize: "1.02rem", color: "#991b1b", marginBottom: 4 }}>
+                        {t(lang, "QR कोड की समय-सीमा (10 मिनट) समाप्त हो चुकी है", "Dynamic QR Code Expired (10-Minute Timeout)")}
+                      </div>
+                      <div style={{ fontSize: "0.84rem", color: "#7f1d1d", marginBottom: 14 }}>
+                        {t(lang, "सुरक्षा कारणों से डायनामिक UPI QR कोड केवल 10 मिनट के लिए मान्य रहता है। कृपया नया कोड जनरेट करें।", "For banking security, dynamic UPI QR codes expire after 10 minutes. Please generate a fresh code.")}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleGeneratePnbQr}
+                        disabled={pnbGenerating}
+                        style={{ fontWeight: 800 }}
+                      >
+                        🔄 {t(lang, "नया PNB डायनामिक QR जनरेट करें", "Generate Fresh PNB Dynamic QR")}
+                      </button>
+                    </div>
+                  ) : pnbOrder.status === "SUCCESS" ? (
+                    /* Success State */
+                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#f0fdf4", borderRadius: 12, border: "1px solid #86efac" }}>
+                      <div style={{ fontSize: "2.2rem", marginBottom: 6 }}>✅</div>
+                      <div style={{ fontWeight: 900, fontSize: "1.15rem", color: "#166534", marginBottom: 4 }}>
+                        {t(lang, "भुगतान सफलतापूर्वक सत्यापित हो गया!", "Payment Verified Successfully!")}
+                      </div>
+                      <div style={{ fontSize: "0.86rem", color: "#15803d" }}>
+                        {t(lang, "आपकी सदस्यता सक्रिय कर दी गई है। आपको आपके पहचान पत्र पृष्ठ पर ले जाया जा रहा है...", "Your Level 3 membership has been activated. Redirecting to your ID Card...")}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Active Pending State with Live QR and Polling */
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, alignItems: "center" }}>
+                      {/* Left: Dynamic QR display */}
+                      <div style={{ textAlign: "center", background: "#f8fafc", padding: 16, borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                        <div
+                          style={{ display: "inline-block", background: "#ffffff", padding: 12, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                          dangerouslySetInnerHTML={{ __html: qrSvg(pnbOrder.qrString, 210) }}
+                        />
+
+                        {/* Expiry Countdown Badge */}
+                        <div style={{
+                          marginTop: 12,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: pnbSecondsLeft < 120 ? "#fee2e2" : "#fef3c7",
+                          color: pnbSecondsLeft < 120 ? "#991b1b" : "#92400e",
+                          padding: "5px 12px",
+                          borderRadius: 20,
+                          fontSize: "0.82rem",
+                          fontWeight: 800
+                        }}>
+                          <span>⏱️</span>
+                          <span>
+                            {t(lang, "समय शेष:", "Valid for:")}{" "}
+                            <b>{Math.floor(pnbSecondsLeft / 60)}:{String(pnbSecondsLeft % 60).padStart(2, "0")}</b>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Right: Details & Status */}
+                      <div>
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          background: "#e0f2fe",
+                          color: "#0369a1",
+                          padding: "6px 12px",
+                          borderRadius: 20,
+                          fontSize: "0.82rem",
+                          fontWeight: 800,
+                          marginBottom: 12
+                        }}>
+                          <span className="login-spinner" style={{ width: 14, height: 14, borderWidth: 2 }}></span>
+                          <span>{t(lang, "भुगतान प्रतीक्षा में... सर्वर लाइव जांच कर रहा है", "Waiting for payment... Server polling live")}</span>
+                        </div>
+
+                        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
+                            <span style={{ color: "#64748b" }}>{t(lang, "मर्चेंट (Merchant):", "Merchant:")}</span>
+                            <span style={{ fontWeight: 800, color: "#1e293b" }}>{pnbOrder.merchantName}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
+                            <span style={{ color: "#64748b" }}>{t(lang, "UPI VPA:", "UPI VPA:")}</span>
+                            <span style={{ fontWeight: 800, color: "#1e293b" }}>{pnbOrder.merchantVpa}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
+                            <span style={{ color: "#64748b" }}>{t(lang, "ऑर्डर संदर्भ (Order Ref):", "Order Ref:")}</span>
+                            <code style={{ fontWeight: 800, color: "#2563eb", background: "#eff6ff", padding: "1px 5px", borderRadius: 4 }}>{pnbOrder.orderId}</code>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", borderTop: "1px dashed #e2e8f0", paddingTop: 6 }}>
+                            <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सटीक देय राशि:", "Payable Amount:")}</span>
+                            <span style={{ fontWeight: 900, color: "#166534", fontSize: "1.05rem" }}>₹{pnbOrder.amount}</span>
+                          </div>
+                        </div>
+
+                        {/* Mobile Direct UPI Intent Link */}
+                        <div style={{ marginBottom: 10 }}>
+                          <a
+                            href={pnbOrder.qrString}
+                            className="btn btn-primary"
+                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 14px", fontWeight: 800, textDecoration: "none" }}
+                          >
+                            <span>📱</span>
+                            <span>{t(lang, "मोबाइल UPI ऐप से भुगतान करें", "Pay via Mobile UPI App")}</span>
+                          </a>
+                        </div>
+
+                        {/* Sandbox / Test Mode Simulation Button */}
+                        {pnbOrder.testMode && (
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              onClick={handleSimulatePnbPayment}
+                              disabled={pnbSimulating}
+                              style={{
+                                width: "100%",
+                                background: "#fef3c7",
+                                border: "1px dashed #d97706",
+                                color: "#92400e",
+                                padding: "8px 12px",
+                                borderRadius: 8,
+                                fontSize: "0.8rem",
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 6
+                              }}
+                            >
+                              <span>⚡</span>
+                              <span>{pnbSimulating ? t(lang, "सिमुलेशन जारी...", "Simulating...") : t(lang, "परीक्षण भुगतान सिमुलेट करें (Sandbox Demo)", "Simulate Instant UPI Payment (Sandbox Demo)")}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+                          <button
+                            type="button"
+                            onClick={handleGeneratePnbQr}
+                            disabled={pnbGenerating}
+                            style={{ background: "none", border: "none", color: "#64748b", fontSize: "0.76rem", cursor: "pointer", textDecoration: "underline" }}
+                          >
+                            🔄 {t(lang, "नया QR कोड पुनः जनरेट करें", "Regenerate QR Code")}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB CONTENT B: RAZORPAY CHECKOUT */}
+              {paymentGatewayType === "razorpay" && (
+                <div style={{
+                  border: "2px solid #2563eb",
+                  borderRadius: 14,
+                  padding: 20,
+                  background: "#ffffff"
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1e3a8a" }}>
+                        💳 Razorpay Gateway Payment
+                      </div>
+                      <div style={{ fontSize: "0.82rem", color: "#64748b", marginTop: 2 }}>
+                        {t(lang, `देय सदस्यता शुल्क: ₹${fee} (${pricingInfo.remainingMonths} माह @ ₹50/माह)`, `Payable Membership Fee: ₹${fee} (${pricingInfo.remainingMonths} months @ ₹50/mo)`)}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#dbeafe", color: "#1e40af", padding: "4px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
+                      <span>🔒</span>
+                      <span>HMAC-SHA256 Secured</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", border: "1px solid #e2e8f0", marginBottom: 16 }}>
+                    <div style={{ fontSize: "0.82rem", color: "#334155", fontWeight: 700, marginBottom: 4 }}>
+                      ✓ {t(lang, "समर्थित भुगतान माध्यम:", "Supported Payment Options:")}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: "0.76rem", color: "#475569" }}>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Google Pay</span>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>PhonePe</span>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Paytm UPI</span>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>BHIM UPI</span>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Debit / Credit Cards (RuPay, Visa, MC)</span>
+                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Net Banking</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-accent btn-lg"
+                    disabled={payingRazorpay || busy || !emailVerified}
+                    onClick={handleRazorpayCheckout}
+                    style={{
+                      width: "100%",
+                      padding: "14px 20px",
+                      fontSize: "1.08rem",
+                      fontWeight: 900,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 10,
+                      boxShadow: "0 4px 14px rgba(245, 158, 11, 0.35)",
+                      cursor: emailVerified ? "pointer" : "not-allowed",
+                      opacity: emailVerified ? 1 : 0.65
+                    }}
+                  >
+                    {payingRazorpay ? (
+                      <>
+                        <span className="login-spinner"></span>
+                        <span>{t(lang, "रेज़रपे सुरक्षित चेकआउट लोड हो रहा है...", "Launching Razorpay Secure Checkout...")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💳</span>
+                        <span>{t(lang, `₹${fee} रेज़रपे द्वारा भुगतान करें एवं Level 3 सदस्यता सक्रिय करें`, `Pay ₹${fee} via Razorpay & Activate Level 3 Membership`)}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {!emailVerified && (
+                    <div style={{ marginTop: 10, fontSize: "0.82rem", color: "#b45309", fontWeight: 700, textAlign: "center" }}>
+                      ⚠️ {t(lang, "भुगतान से पूर्व कृपया ऊपर फॉर्म में 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above before proceeding to Razorpay checkout.")}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB CONTENT B: MANUAL UPI PAYMENT BOX */}
+              {paymentGatewayType === "manual_upi" && (
+                <div className="join-pay-box" style={{
+                  border: `2px solid ${utrNumber.trim().length >= 6 ? "#16a34a" : "#f59e0b"}`,
+                  borderRadius: 14,
+                  padding: 18,
+                  background: "#ffffff"
+                }}>
+                  <div className="join-pay-qr-wrap" dangerouslySetInnerHTML={{ __html: qrSvg(upi, 120) }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "var(--primary)" }}>
+                        💳 {t(lang, "देय सदस्यता शुल्क", "Membership Fee Due")}: ₹{fee}
+                      </div>
+                      <span style={{ background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
+                        ⚡ {t(lang, "कैलेंडर वर्ष सदस्यता", "Calendar Year Membership")}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 2 }}>
+                      UPI ID: <b style={{ color: "var(--primary)" }}>{s.upiId}</b>
+                    </div>
+                    <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 12 }}>
+                      {t(lang, "बैंक खाता", "Bank Account")}: <b>{s.bankAccountNumber} ({s.bankIfsc})</b>
+                    </div>
+
+                    {/* Payment Mode Selector */}
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ fontSize: "0.82rem", fontWeight: 800, color: "var(--text)", marginBottom: 4, display: "block" }}>
+                        {t(lang, "भुगतान का माध्यम (Payment Mode) *", "Payment Mode *")}
+                      </label>
+                      <select
+                        className="form-control"
+                        value={paymentMode}
+                        onChange={(e) => setPaymentMode(e.target.value)}
+                        style={{ fontWeight: 700 }}
+                      >
+                        <option value="UPI">UPI (Google Pay / PhonePe / Paytm / BHIM)</option>
+                        <option value="PhonePe">PhonePe</option>
+                        <option value="Google Pay">Google Pay (GPay)</option>
+                        <option value="Paytm">Paytm</option>
+                        <option value="Net Banking">Net Banking / IMPS / NEFT</option>
+                      </select>
+                    </div>
+
+                    {/* 12-Digit UTR Input */}
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ fontSize: "0.82rem", fontWeight: 800, color: "var(--text)", marginBottom: 4, display: "block" }}>
+                        {t(lang, "12-अंकीय UTR / Transaction No *", "12-digit UTR / Transaction Ref No *")}
+                      </label>
+                      <input
+                        className={`form-control ${errors.utr ? "is-invalid" : ""}`}
+                        name="utrNumber"
+                        value={utrNumber}
+                        onChange={(e) => {
+                          setUtrNumber(e.target.value);
+                          if (errors.utr) setErrors((prev) => ({ ...prev, utr: "" }));
+                        }}
+                        placeholder={t(lang, "उदा: 412345678901 (12 अंक)", "e.g. 412345678901 (12 digits)")}
+                        required={paymentGatewayType === "manual_upi"}
+                        style={{ fontWeight: 800, letterSpacing: 1 }}
+                      />
+                      {errors.utr && (
+                        <div style={{ color: "var(--danger)", fontSize: "0.8rem", fontWeight: 700, marginTop: 4 }}>
+                          {errors.utr}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Optional Screenshot Upload */}
+                    <div>
+                      <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748b", marginBottom: 4, display: "block" }}>
+                        {t(lang, "भुगतान रसीद / स्क्रीनशॉट (वैकल्पिक)", "Payment Receipt Screenshot (Optional)")}
+                      </label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,image/*"
+                        onChange={handleReceiptProofChange}
+                        disabled={uploadingReceipt}
+                      />
+                      {receiptProofUrl && (
+                        <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: 700, marginTop: 4, display: "block" }}>
+                          ✓ {t(lang, "रसीद स्क्रीनशॉट संलग्न किया गया", "Receipt screenshot attached")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Terms and Conditions */}
             <div className="form-group full" style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: 16, marginTop: 4, background: "#f8fafc" }}>
               <div style={{ fontSize: "0.98rem", fontWeight: 900, color: "var(--primary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
                 📜 {t(lang, tc.titleHi || "सदस्यता नियम एवं शर्तें", tc.titleEn || "Membership Terms & Conditions")}
@@ -800,13 +2174,78 @@ export function JoinPage() {
             </div>
           </div>
 
-          <button
-            className="btn btn-accent btn-lg"
-            disabled={busy}
-            style={{ width: "100%", marginTop: 16, padding: "12px 20px", fontSize: "1.05rem", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-          >
-            ✓ {t(lang, "शर्तें स्वीकार कर सदस्यता पंजीकरण पूर्ण करें", "Accept Terms & Complete Registration")}
-          </button>
+          {/* Validation warning if email or payment not ready */}
+          {!isFormReady && (
+            <div style={{
+              background: "#fffbeb",
+              border: "1px solid #fde68a",
+              borderRadius: 8,
+              padding: "10px 14px",
+              marginTop: 14,
+              fontSize: "0.85rem",
+              color: "#92400e",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: 8
+            }}>
+              <span>⚠️</span>
+              <div>
+                {!emailVerified && <div>• {t(lang, "कृपया ऊपर 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above.")}</div>}
+                {paymentGatewayType === "manual_upi" && utrNumber.trim().length < 6 && (
+                  <div>• {t(lang, `कृपया ₹${fee} शुल्क भुगतान का 12-अंकीय UTR नंबर दर्ज करें।`, `Please enter 12-digit UTR of your ₹${fee} fee payment.`)}</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* If PNB Dynamic QR is selected, show status notice */}
+          {paymentGatewayType === "pnb_qr" && (
+            <div style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 10,
+              padding: "12px 16px",
+              marginTop: 16,
+              display: "flex",
+              alignItems: "center",
+              gap: 12
+            }}>
+              <span style={{ fontSize: "1.4rem" }}>🏛️</span>
+              <div style={{ fontSize: "0.85rem", color: "#1e40af" }}>
+                <b>{t(lang, "PNB डायनामिक QR भुगतान:", "PNB Dynamic QR Payment:")}</b>{" "}
+                {pnbOrder?.status === "PENDING"
+                  ? t(lang, "कृपया ऊपर दिए गए डायनामिक QR कोड को अपने मोबाइल UPI ऐप (Google Pay / PhonePe / Paytm / BHIM) से स्कैन कर भुगतान करें। सर्वर द्वारा पुष्टि होते ही आपकी सदस्यता सक्रिय हो जाएगी।", "Please scan the dynamic QR code above with any UPI app to complete payment. Membership will activate automatically.")
+                  : t(lang, "कृपया ऊपर दिए गए बॉक्स में 'PNB डायनामिक QR कोड जनरेट करें' बटन दबाकर भुगतान पूरा करें।", "Please click 'Generate PNB Dynamic QR' above to initiate instant UPI payment.")}
+              </div>
+            </div>
+          )}
+
+          {/* If manual UPI is selected, show submit button */}
+          {paymentGatewayType === "manual_upi" && (
+            <button
+              type="submit"
+              className="btn btn-accent btn-lg"
+              disabled={busy || !isFormReady}
+              style={{
+                width: "100%",
+                marginTop: 16,
+                padding: "13px 20px",
+                fontSize: "1.05rem",
+                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                opacity: isFormReady ? 1 : 0.65,
+                cursor: isFormReady ? "pointer" : "not-allowed"
+              }}
+            >
+              {busy
+                ? t(lang, "पंजीकरण एवं सत्यापन जारी है...", "Processing registration & verification...")
+                : `✓ ${t(lang, "UTR सत्यापन स्वीकार कर Level 3 सदस्यता पूर्ण करें", "Complete Verified Level 3 Registration")}`}
+            </button>
+          )}
         </form>
 
         {/* Right Column: Sidebar Cards */}
@@ -1298,65 +2737,32 @@ function Field({ label, error, ...props }) {
 }
 
 function LoginModalContent({ modal, setModal, lang, showToast, persistSession, refresh }) {
-  const { setRoute, state } = usePortal();
-  const allowedMethod = state?.settings?.loginMethod || "both"; // "both", "otp", "password"
-  const defaultTab = allowedMethod === "password" ? "password" : "otp";
-  const [loginTab, setLoginTab] = useState(defaultTab);
+  const { setRoute } = usePortal();
+
+  // Mode: "login" or "forgot"
+  const [mode, setMode] = useState("login");
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authSuccess, setAuthSuccess] = useState("");
-  const [authConfig, setAuthConfig] = useState({
-    isGoogleAuthConfigured: false,
-    isGmailConfigured: false,
-    googleClientId: "",
-    database: { connected: false }
-  });
 
-  useEffect(() => {
-    if (allowedMethod === "password" && loginTab !== "password") {
-      setLoginTab("password");
-    } else if (allowedMethod === "otp" && loginTab !== "otp") {
-      setLoginTab("otp");
-    }
-  }, [allowedMethod]);
-
-  // ── Email OTP Authentication State ──
-  const [otpEmail, setOtpEmail] = useState("");
-  const [otpStep, setOtpStep] = useState(1); // 1 = Enter Email, 2 = Enter 6-digit OTP
-  const [otpCode, setOtpCode] = useState("");
-  const [resendCooldown, setResendCooldown] = useState(0);
-
-  // ── Password / Admin Login State ──
+  // ── Password Login State ──
   const [showPass, setShowPass] = useState(false);
   const [query, setQuery] = useState(modal.prefill || "");
   const [password, setPassword] = useState("");
   const [activePreset, setActivePreset] = useState(null);
 
-  // ── Fetch Auth System Status on Mount ──
-  useEffect(() => {
-    api("/api/auth/status")
-      .then((d) => {
-        setAuthConfig((prev) => ({
-          ...prev,
-          database: d.database || { connected: false },
-          isGmailConfigured: d.gmail ? d.gmail.configured : false,
-        }));
-      })
-      .catch(() => {});
+  // ── Forgot Password State ──
+  const [forgotStep, setForgotStep] = useState(1); // 1 = Enter Email/ID, 2 = Enter OTP + New Password
+  const [forgotQuery, setForgotQuery] = useState("");
+  const [targetEmail, setTargetEmail] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
-    api("/api/auth/config")
-      .then((d) => {
-        setAuthConfig((prev) => ({
-          ...prev,
-          googleClientId: d.googleClientId || "",
-          isGoogleAuthConfigured: d.isGoogleAuthConfigured || false,
-          isGmailConfigured: d.isGmailConfigured !== undefined ? d.isGmailConfigured : prev.isGmailConfigured,
-        }));
-      })
-      .catch(() => {});
-  }, []);
-
-  // ── 60-Second Cooldown Countdown Timer ──
+  // 60-Second Cooldown Countdown Timer for Forgot Password
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -1365,190 +2771,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
-  // ── Load Google GSI Script if Google Client ID is configured ──
-  useEffect(() => {
-    if (!authConfig.googleClientId || !authConfig.isGoogleAuthConfigured) return;
-    if (loginTab !== "google") return;
-    const existing = document.getElementById("gsi-script");
-    const initGoogle = () => {
-      if (!window.google) return;
-      window.google.accounts.id.initialize({
-        client_id: authConfig.googleClientId,
-        callback: handleGoogleCredential,
-      });
-      const btn = document.getElementById("google-signin-btn");
-      if (btn) {
-        window.google.accounts.id.renderButton(btn, {
-          theme: "outline",
-          size: "large",
-          width: 320,
-          text: "signin_with_google",
-          shape: "rectangular",
-        });
-      }
-    };
-    if (existing) {
-      initGoogle();
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "gsi-script";
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = initGoogle;
-    document.head.appendChild(script);
-  }, [authConfig.googleClientId, authConfig.isGoogleAuthConfigured, loginTab]);
-
-  // ── Send 6-Digit OTP Handler ──
-  async function handleSendOtp(e) {
-    if (e) e.preventDefault();
-    if (submitting) return;
-    const cleanEmail = otpEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setAuthError(t(lang, "कृपया एक मान्य ईमेल पता दर्ज करें।", "Please enter a valid email address."));
-      return;
-    }
-
-    setSubmitting(true);
-    setAuthError("");
-    setAuthSuccess("");
-
-    try {
-      const data = await api("/api/auth/send-otp", {
-        method: "POST",
-        body: { email: cleanEmail },
-      });
-      setOtpStep(2);
-      setResendCooldown(data.cooldownSeconds || 60);
-      setAuthSuccess(
-        t(
-          lang,
-          `6-अंकीय सत्यापन कोड ${cleanEmail} पर भेज दिया गया है।`,
-          `6-digit verification code sent to ${cleanEmail}.`
-        )
-      );
-    } catch (err) {
-      setAuthError(err.message || "Failed to send OTP.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // ── Verify 6-Digit OTP Handler ──
-  async function handleVerifyOtp(e) {
-    if (e) e.preventDefault();
-    if (submitting) return;
-    const cleanOtp = otpCode.trim();
-    if (cleanOtp.length !== 6) {
-      setAuthError(t(lang, "कृपया पूरा 6-अंकीय कोड दर्ज करें।", "Please enter the full 6-digit code."));
-      return;
-    }
-
-    setSubmitting(true);
-    setAuthError("");
-    setAuthSuccess("");
-
-    try {
-      const data = await api("/api/auth/verify-otp", {
-        method: "POST",
-        body: {
-          email: otpEmail.trim().toLowerCase(),
-          otp: cleanOtp,
-        },
-      });
-
-      const sessionUser = data.user || {};
-      const nextSession = {
-        token: data.token,
-        memberId: sessionUser.memberId || sessionUser.id,
-        member: sessionUser,
-        level: sessionUser.level || 3,
-        isAdmin:
-          sessionUser.level === 1 ||
-          sessionUser.level === 2 ||
-          sessionUser.role === "admin" ||
-          sessionUser.role === "superadmin",
-      };
-
-      persistSession(nextSession);
-      await refresh(nextSession);
-      setModal(null);
-      showToast(
-        t(
-          lang,
-          data.isNewUser ? "पंजीकरण एवं लॉगिन सफल!" : "लॉगिन सफल!",
-          data.message || "Authentication successful!"
-        )
-      );
-
-      // Redirect to appropriate dashboard
-      if (nextSession.isAdmin) {
-        setRoute("admin");
-      } else {
-        setRoute("idcard");
-      }
-    } catch (err) {
-      setAuthError(err.message || "Verification failed.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // ── Password Login Handler (Admin / Core Members) ──
-  async function handlePasswordLogin(e) {
-    e.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
-    setAuthError("");
-    const raw = { query, password };
-    try {
-      const data = await api("/api/member/login", { method: "POST", body: raw });
-      const next = {
-        memberId: data.member.id,
-        memberPass: raw.password,
-        member: data.member,
-        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
-        isAdmin: Boolean(data.isAdmin),
-      };
-      persistSession(next);
-      await refresh(next);
-      setModal(null);
-      showToast(t(lang, `लॉगिन सफल (Level ${next.level})`, `Login successful (Level ${next.level})`));
-      if (next.isAdmin) setRoute("admin");
-    } catch (err) {
-      setAuthError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // ── Google One-Click Login Handler ──
-  async function handleGoogleCredential({ credential }) {
-    if (submitting) return;
-    setSubmitting(true);
-    setAuthError("");
-    try {
-      const data = await api("/api/auth/google", { method: "POST", body: { credential } });
-      const next = {
-        memberId: data.member.id,
-        memberPass: data.memberPass || data.member.password || "google",
-        member: data.member,
-        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
-        isAdmin: Boolean(data.isAdmin),
-      };
-      persistSession(next);
-      await refresh(next);
-      setModal(null);
-      showToast(t(lang, "Google लॉगिन सफल!", "Google login successful!"));
-      if (next.isAdmin) setRoute("admin");
-    } catch (err) {
-      setAuthError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+  // Demo account presets
   const demoAccounts = [
     { id: "superadmin", level: "Level 1 (Super Admin)", icon: "👑", user: "admin", pass: "admin123" },
     { id: "admin", level: "Level 2 (Admin)", icon: "⭐", user: "UPBMS-CORE-002", pass: "123456" },
@@ -1559,6 +2782,145 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
     setQuery(acc.user);
     setPassword(acc.pass);
     setActivePreset(acc.id);
+    setAuthError("");
+  }
+
+  // ── Handle Password Login ──
+  async function handlePasswordLogin(e) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    const cleanQuery = query.trim();
+    const cleanPass = password.trim();
+
+    if (!cleanQuery || !cleanPass) {
+      setAuthError(t(lang, "कृपया सदस्य आईडी / ईमेल और पासवर्ड दर्ज करें।", "Please enter Member ID / Email and password."));
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const data = await api("/api/member/login", {
+        method: "POST",
+        body: { query: cleanQuery, password: cleanPass }
+      });
+      const next = {
+        memberId: data.member.id,
+        memberPass: cleanPass,
+        member: data.member,
+        level: data.level || (data.isAdmin ? (data.member.level || 2) : (data.member.level || 3)),
+        isAdmin: Boolean(data.isAdmin),
+      };
+      persistSession(next);
+      await refresh(next);
+      setModal(null);
+      showToast(t(lang, `लॉगिन सफल! (Level ${next.level})`, `Login successful! (Level ${next.level})`));
+      if (next.isAdmin) {
+        setRoute("admin");
+      } else {
+        setRoute("idcard");
+      }
+    } catch (err) {
+      setAuthError(err.message || "Login failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Forgot Password Step 1: Send OTP ──
+  async function handleSendForgotOtp(e) {
+    if (e) e.preventDefault();
+    if (submitting) return;
+    const clean = forgotQuery.trim();
+    if (!clean) {
+      setAuthError(t(lang, "कृपया अपनी सदस्य आईडी, ईमेल अथवा मोबाइल नंबर दर्ज करें।", "Please enter your Member ID, Email, or Mobile."));
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const res = await api("/api/auth/forgot-password/send-otp", {
+        method: "POST",
+        body: { query: clean }
+      });
+      setTargetEmail(res.email);
+      setMaskedEmail(res.emailMasked);
+      setForgotStep(2);
+      setResendCooldown(60);
+      setAuthSuccess(t(lang, res.message || `ओटीपी कोड ${res.emailMasked} पर भेजा गया है।`, res.message || `OTP sent to ${res.emailMasked}`));
+    } catch (err) {
+      setAuthError(err.message || "Failed to send reset code.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Forgot Password Step 2: Verify OTP & Reset Password ──
+  async function handleResetPassword(e) {
+    e.preventDefault();
+    if (submitting) return;
+
+    const cleanOtp = resetOtp.trim();
+    const cleanNewPass = newPassword.trim();
+    const cleanConfirm = confirmPassword.trim();
+
+    if (!cleanOtp || cleanOtp.length !== 6) {
+      setAuthError(t(lang, "कृपया 6-अंकीय ओटीपी कोड दर्ज करें।", "Please enter the 6-digit OTP code."));
+      return;
+    }
+
+    if (!cleanNewPass || cleanNewPass.length < 4) {
+      setAuthError(t(lang, "नया पासवर्ड कम से कम 4 अक्षरों का होना चाहिए।", "New password must be at least 4 characters."));
+      return;
+    }
+
+    if (cleanNewPass !== cleanConfirm) {
+      setAuthError(t(lang, "दोनों पासवर्ड मेल नहीं खा रहे हैं। कृपया दोबारा जांचें।", "Passwords do not match. Please verify."));
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError("");
+    setAuthSuccess("");
+
+    try {
+      const res = await api("/api/auth/forgot-password/reset", {
+        method: "POST",
+        body: {
+          email: targetEmail,
+          otp: cleanOtp,
+          newPassword: cleanNewPass
+        }
+      });
+
+      // Auto-login the user with new credentials
+      const next = {
+        memberId: res.member.id,
+        memberPass: cleanNewPass,
+        member: res.member,
+        level: res.level || (res.isAdmin ? 2 : 3),
+        isAdmin: Boolean(res.isAdmin),
+      };
+      persistSession(next);
+      await refresh(next);
+      setModal(null);
+      showToast(t(lang, "✓ पासवर्ड सफलतापूर्वक बदल दिया गया एवं लॉगिन पूर्ण!", "✓ Password reset successfully & logged in!"));
+      if (next.isAdmin) {
+        setRoute("admin");
+      } else {
+        setRoute("idcard");
+      }
+    } catch (err) {
+      setAuthError(err.message || "Password reset failed.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -1566,13 +2928,17 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
       {/* Header */}
       <div className="login-modal-header">
         <div className="login-header-brand">
-          <div className="login-header-icon-badge">🔐</div>
+          <div className="login-header-icon-badge">{mode === "forgot" ? "🔑" : "🔐"}</div>
           <div>
-            <div className="login-header-title">{t(lang, "पोर्टल लॉगिन (User Authentication)", "Portal Authentication")}</div>
+            <div className="login-header-title">
+              {mode === "forgot"
+                ? t(lang, "पासवर्ड रीसेट करें (Reset Password)", "Reset Password via Email OTP")
+                : t(lang, "पोर्टल सदस्य लॉगिन (Member Login)", "Portal Member Login")}
+            </div>
             <div className="login-header-subtitle">
-              {allowedMethod === "otp" && t(lang, "पासवर्ड-मुक्त ईमेल OTP सत्यापन • UPBMS", "Passwordless Email OTP Verification • UPBMS")}
-              {allowedMethod === "password" && t(lang, "सुरक्षित सदस्य आईडी व पासवर्ड लॉगिन • UPBMS", "Secure Member ID & Password Login • UPBMS")}
-              {allowedMethod === "both" && t(lang, "ईमेल OTP अथवा पासवर्ड द्वारा लॉगिन • UPBMS", "Email OTP or Password Login • UPBMS")}
+              {mode === "forgot"
+                ? t(lang, "ईमेल OTP सत्यापन द्वारा पासवर्ड रीसेट • UPBMS", "Email OTP Verified Password Reset • UPBMS")
+                : t(lang, "सदस्य आईडी / ईमेल एवं पासवर्ड द्वारा लॉगिन • UPBMS", "Sign In with Member ID / Email & Password • UPBMS")}
             </div>
           </div>
         </div>
@@ -1586,238 +2952,32 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
         </button>
       </div>
 
-      {/* Primary Tab Switcher - Shown when both methods are enabled */}
-      {allowedMethod === "both" && (
-        <div className="login-tabs-strip">
-          <button
-            type="button"
-            className={`login-tab-btn ${loginTab === "otp" ? "active" : ""}`}
-            onClick={() => { setLoginTab("otp"); setAuthError(""); setAuthSuccess(""); }}
-          >
-            📧 {t(lang, "ईमेल OTP लॉगिन", "Email OTP Login")}
-          </button>
-          <button
-            type="button"
-            className={`login-tab-btn ${loginTab === "password" ? "active" : ""}`}
-            onClick={() => { setLoginTab("password"); setAuthError(""); setAuthSuccess(""); }}
-          >
-            🔑 {t(lang, "पासवर्ड / एडमिन", "Password / Admin")}
-          </button>
-          {authConfig.isGoogleAuthConfigured && (
-            <button
-              type="button"
-              className={`login-tab-btn ${loginTab === "google" ? "active" : ""}`}
-              onClick={() => { setLoginTab("google"); setAuthError(""); setAuthSuccess(""); }}
-            >
-              🌐 Google
-            </button>
-          )}
+      {/* Feedback Messages */}
+      {authError && (
+        <div className="auth-error-box" style={{ margin: "16px 20px 0" }}>
+          <span>⚠️</span>
+          <div>{authError}</div>
+        </div>
+      )}
+      {authSuccess && (
+        <div className="auth-success-box" style={{ margin: "16px 20px 0" }}>
+          <span>✅</span>
+          <div>{authSuccess}</div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 1: PASSWORDLESS EMAIL OTP AUTHENTICATION
+          VIEW 1: STANDARD PASSWORD LOGIN (MEMBER ID / EMAIL + PASSWORD)
           ───────────────────────────────────────────────────────────── */}
-      {(allowedMethod === "otp" || (allowedMethod === "both" && loginTab === "otp")) && (
-        <div className="otp-box-screen">
-          {/* Show warning banner only if database or gmail is awaiting configuration */}
-          {(!authConfig.database?.connected || !authConfig.isGmailConfigured) && (
-            <div className="auth-db-status-banner disconnected">
-              <span>⚠️</span>
-              <div>
-                <b>
-                  {!authConfig.database?.connected
-                    ? t(lang, "MongoDB Atlas कनेक्शन प्रतीक्षारत (Awaiting MONGODB_URI in backend/.env)", "Awaiting MongoDB Atlas URI in backend/.env")
-                    : t(lang, "Gmail App Password लंबित (Awaiting GMAIL_APP_PASSWORD in backend/.env)", "Awaiting Gmail App Password in backend/.env")}
-                </b>
-              </div>
-            </div>
-          )}
-
-          {/* Feedback Messages */}
-          {authError && (
-            <div className="auth-error-box">
-              <span>⚠️</span>
-              <div>{authError}</div>
-            </div>
-          )}
-          {authSuccess && (
-            <div className="auth-success-box">
-              <span>✅</span>
-              <div>{authSuccess}</div>
-            </div>
-          )}
-
-          {/* STEP 1: ENTER EMAIL */}
-          {otpStep === 1 && (
-            <form onSubmit={handleSendOtp}>
-              <div className="otp-screen-badge">
-                <span>✉️</span>
-                <span>{t(lang, "पासवर्ड की आवश्यकता नहीं है", "No Password Required")}</span>
-              </div>
-              <h3 className="otp-screen-title">
-                {t(lang, "अपना ईमेल दर्ज करें", "Enter Your Email Address")}
-              </h3>
-              <p className="otp-screen-desc">
-                {t(
-                  lang,
-                  "हम आपके ईमेल पर 6-अंकीय सत्यापन कोड भेजेंगे। नए उपयोगकर्ता स्वतः पंजीकृत हो जाएंगे।",
-                  "We'll send a 6-digit OTP to your inbox. New users are automatically registered upon verification."
-                )}
-              </p>
-
-              <div className="login-field-group">
-                <label className="login-field-label">
-                  <span>📧</span>
-                  <span>{t(lang, "ईमेल पता (Email Address)", "Email Address")}</span>
-                </label>
-                <div className="login-input-wrap">
-                  <input
-                    className="login-form-input"
-                    type="email"
-                    name="email"
-                    value={otpEmail}
-                    onChange={(e) => setOtpEmail(e.target.value)}
-                    placeholder="e.g. member@gmail.com"
-                    required
-                    autoFocus
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="login-submit-btn"
-                disabled={submitting || !otpEmail.trim()}
-              >
-                {submitting ? (
-                  <>
-                    <span className="login-spinner"></span>
-                    <span>{t(lang, "सत्यापन कोड भेजा जा रहा है...", "Sending 6-Digit OTP...")}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>📤</span>
-                    <span>{t(lang, "6-अंकीय OTP कोड भेजें", "Send 6-Digit Verification Code")}</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )}
-
-          {/* STEP 2: VERIFY 6-DIGIT OTP */}
-          {otpStep === 2 && (
-            <form onSubmit={handleVerifyOtp}>
-              <div className="otp-screen-badge">
-                <span>⏱️</span>
-                <span>{t(lang, "OTP 5 मिनट के लिए मान्य है", "OTP Valid for 5 Minutes")}</span>
-              </div>
-              <h3 className="otp-screen-title">
-                {t(lang, "6-अंकीय OTP कोड दर्ज करें", "Enter 6-Digit Verification Code")}
-              </h3>
-              <p className="otp-screen-desc">
-                {t(lang, "सत्यापन कोड इस ईमेल पर भेजा गया है:", "Verification code sent to:")}{" "}
-                <span className="otp-target-email-pill">{otpEmail}</span>
-              </p>
-
-              <div className="login-field-group">
-                <label className="login-field-label">
-                  <span>🔢</span>
-                  <span>{t(lang, "6-अंकीय OTP दर्ज करें (One-Time Password)", "Enter 6-Digit Code")}</span>
-                </label>
-                <input
-                  className="otp-digits-input"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="••••••"
-                  maxLength={6}
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  required
-                  autoFocus
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="login-submit-btn"
-                disabled={submitting || otpCode.trim().length !== 6}
-                style={{ marginTop: "16px" }}
-              >
-                {submitting ? (
-                  <>
-                    <span className="login-spinner"></span>
-                    <span>{t(lang, "सत्यापित किया जा रहा है...", "Verifying OTP...")}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🔐</span>
-                    <span>{t(lang, "सत्यापित करें एवं लॉगिन करें", "Verify & Sign In")}</span>
-                  </>
-                )}
-              </button>
-
-              {/* Resend Cooldown and Back Action */}
-              <div className="otp-resend-row">
-                <button
-                  type="button"
-                  className="otp-resend-link"
-                  onClick={() => {
-                    setOtpStep(1);
-                    setOtpCode("");
-                    setAuthError("");
-                    setAuthSuccess("");
-                  }}
-                >
-                  ← {t(lang, "ईमेल बदलें", "Change Email")}
-                </button>
-
-                <div>
-                  {resendCooldown > 0 ? (
-                    <span className="otp-cooldown-text">
-                      ⏱️ {t(lang, `पुनः भेजें (${resendCooldown}s)`, `Resend in ${resendCooldown}s`)}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="otp-resend-link"
-                      onClick={() => handleSendOtp()}
-                      disabled={submitting}
-                    >
-                      🔄 {t(lang, "पुनः OTP भेजें", "Resend OTP")}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </form>
-          )}
-
-          <div className="login-security-trust" style={{ marginTop: "20px" }}>
-            <span>🛡️</span>
-            <span>{t(lang, "आधिकारिक प्रेषक: upbmsofficial@gmail.com • 256-बिट SSL", "Official Sender: upbmsofficial@gmail.com • 256-Bit SSL")}</span>
-          </div>
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          TAB 2: PASSWORD / ADMIN LOGIN (PRESERVES EXISTING ADMIN ACCESS)
-          ───────────────────────────────────────────────────────────── */}
-      {(allowedMethod === "password" || (allowedMethod === "both" && loginTab === "password")) && (
+      {mode === "login" && (
         <form onSubmit={handlePasswordLogin} className="login-form-container">
-          {authError && (
-            <div className="auth-error-box">
-              <span>⚠️</span>
-              <div>{authError}</div>
-            </div>
-          )}
-
+          {/* Quick Click Demo Accounts Bar */}
           <div className="demo-accounts-card">
             <div className="demo-accounts-top">
               <div className="demo-accounts-title">
                 <span>💡</span>
-                <span>{t(lang, "एडमिन एवं डेमो खाते (Admin & Demo Accounts):", "Admin & Demo Accounts:")}</span>
+                <span>{t(lang, "डेमो खाते (Click to auto-fill):", "Demo Accounts (Click to auto-fill):")}</span>
               </div>
-              <span className="demo-auto-hint">{t(lang, "क्लिक करके भरें", "Click to Fill")}</span>
             </div>
             <div className="demo-items-grid">
               {demoAccounts.map((acc) => {
@@ -1842,37 +3002,63 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
             </div>
           </div>
 
+          {/* Member ID / Email Input */}
           <div className="login-field-group">
             <label className="login-field-label">
               <span>👤</span>
-              <span>{t(lang, "सदस्य आईडी / यूज़रनेम / मोबाइल", "Member ID / Username / Mobile")}</span>
+              <span>{t(lang, "सदस्य आईडी / ईमेल *", "Member ID / Email *")}</span>
             </label>
             <div className="login-input-wrap">
               <input
                 className="login-form-input"
                 name="query"
                 value={query}
-                onChange={(e) => { setQuery(e.target.value); setActivePreset(null); }}
-                placeholder="e.g. admin or UPBMS-CORE-001"
+                onChange={(e) => { setQuery(e.target.value); setActivePreset(null); setAuthError(""); }}
+                placeholder="e.g. member@gmail.com or UPBMS-2026-1001"
                 required
                 autoFocus
               />
             </div>
           </div>
 
+          {/* Password Input */}
           <div className="login-field-group">
-            <label className="login-field-label">
-              <span>🔒</span>
-              <span>{t(lang, "पासवर्ड", "Password")}</span>
-            </label>
-            <div className="login-input-wrap">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <label className="login-field-label" style={{ marginBottom: 0 }}>
+                <span>🔒</span>
+                <span>{t(lang, "पासवर्ड *", "Password *")}</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("forgot");
+                  setForgotStep(1);
+                  setForgotQuery(query);
+                  setAuthError("");
+                  setAuthSuccess("");
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#2563eb",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  padding: "0 2px",
+                  textDecoration: "underline"
+                }}
+              >
+                {t(lang, "पासवर्ड भूल गए? (Forgot Password?)", "Forgot Password?")}
+              </button>
+            </div>
+            <div className="login-input-wrap" style={{ marginTop: 6 }}>
               <input
                 className="login-form-input"
                 name="password"
                 type={showPass ? "text" : "password"}
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setActivePreset(null); }}
-                placeholder="e.g. admin123 or 123456"
+                onChange={(e) => { setPassword(e.target.value); setActivePreset(null); setAuthError(""); }}
+                placeholder="e.g. 123456 or admin123"
                 style={{ paddingRight: "44px" }}
                 required
               />
@@ -1888,6 +3074,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
             </div>
           </div>
 
+          {/* Sign In Button */}
           <button type="submit" className="login-submit-btn" disabled={submitting}>
             {submitting ? (
               <>
@@ -1897,38 +3084,225 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
             ) : (
               <>
                 <span>🔑</span>
-                <span>{t(lang, "पासवर्ड द्वारा लॉगिन करें", "Sign In with Password")}</span>
+                <span>{t(lang, "लॉगिन करें (Sign In)", "Sign In with Password")}</span>
               </>
             )}
           </button>
+
+          {/* New Member Registration Link */}
+          <div style={{ textAlign: "center", marginTop: 16, paddingTop: 14, borderTop: "1px solid #e2e8f0", fontSize: "0.86rem", color: "#64748b" }}>
+            <span>{t(lang, "नए बैंक मित्र हैं? ", "New Bank Mitra? ")}</span>
+            <button
+              type="button"
+              onClick={() => { setModal(null); setRoute("join"); }}
+              style={{ background: "none", border: "none", color: "var(--primary)", fontWeight: 800, cursor: "pointer", textDecoration: "underline" }}
+            >
+              ✍️ {t(lang, "सदस्यता पंजीकरण करें (Join Us)", "Join Membership")}
+            </button>
+          </div>
         </form>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 3: GOOGLE ONE-TAP LOGIN
+          VIEW 2: FORGOT PASSWORD (EMAIL OTP VERIFICATION & RESET)
           ───────────────────────────────────────────────────────────── */}
-      {(allowedMethod === "both" && loginTab === "google") && (
+      {mode === "forgot" && (
         <div className="login-form-container">
-          {authError && (
-            <div className="auth-error-box">
-              <span>⚠️</span>
-              <div>{authError}</div>
-            </div>
+          {/* Step 1: Enter Email / Member ID */}
+          {forgotStep === 1 && (
+            <form onSubmit={handleSendForgotOtp}>
+              <div className="otp-screen-badge" style={{ marginBottom: 12 }}>
+                <span>🔐</span>
+                <span>{t(lang, "पासवर्ड रीसेट सुरक्षा सत्यापन", "Password Reset Verification")}</span>
+              </div>
+              <h3 className="otp-screen-title" style={{ fontSize: "1.1rem", marginBottom: 6 }}>
+                {t(lang, "अपना पंजीकृत विवरण दर्ज करें", "Enter Registered Account Details")}
+              </h3>
+              <p className="otp-screen-desc" style={{ marginBottom: 16 }}>
+                {t(
+                  lang,
+                  "अपनी पंजीकृत सदस्य आईडी अथवा ईमेल दर्ज करें। आपके पंजीकृत ईमेल पर 6-अंकीय सुरक्षा कोड भेजा जाएगा।",
+                  "Enter your registered Member ID or Email. A 6-digit OTP code will be sent to your registered email."
+                )}
+              </p>
+
+              <div className="login-field-group">
+                <label className="login-field-label">
+                  <span>✉️</span>
+                  <span>{t(lang, "पंजीकृत सदस्य आईडी / ईमेल *", "Registered Member ID / Email *")}</span>
+                </label>
+                <div className="login-input-wrap">
+                  <input
+                    className="login-form-input"
+                    type="text"
+                    value={forgotQuery}
+                    onChange={(e) => { setForgotQuery(e.target.value); setAuthError(""); }}
+                    placeholder="e.g. member@gmail.com or UPBMS-2026-1001"
+                    required
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="login-submit-btn"
+                disabled={submitting || !forgotQuery.trim()}
+              >
+                {submitting ? (
+                  <>
+                    <span className="login-spinner"></span>
+                    <span>{t(lang, "ओटीपी कोड भेजा जा रहा है...", "Sending OTP code...")}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📤</span>
+                    <span>{t(lang, "6-अंकीय रीसेट OTP भेजें", "Send 6-Digit Reset OTP")}</span>
+                  </>
+                )}
+              </button>
+
+              <div style={{ textAlign: "center", marginTop: 16 }}>
+                <button
+                  type="button"
+                  onClick={() => { setMode("login"); setAuthError(""); setAuthSuccess(""); }}
+                  style={{ background: "none", border: "none", color: "#64748b", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                >
+                  ← {t(lang, "लॉगिन पृष्ठ पर वापस जाएं", "Back to Sign In")}
+                </button>
+              </div>
+            </form>
           )}
-          <div className="otp-screen-desc" style={{ textAlign: "center", marginBottom: "20px" }}>
-            {t(
-              lang,
-              "अपने Google खाते से एक क्लिक में सुरक्षित रूप से लॉगिन करें।",
-              "Sign in securely with one click using your Google account."
-            )}
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
-            <div id="google-signin-btn"></div>
-          </div>
-          {submitting && (
-            <div style={{ textAlign: "center", color: "#64748b", marginTop: "12px" }}>
-              <span className="login-spinner"></span> {t(lang, "Google लॉगिन सत्यापित हो रहा है...", "Verifying Google account...")}
-            </div>
+
+          {/* Step 2: Enter 6-Digit OTP & Set New Password */}
+          {forgotStep === 2 && (
+            <form onSubmit={handleResetPassword}>
+              <div className="otp-screen-badge" style={{ marginBottom: 12 }}>
+                <span>📩</span>
+                <span>{t(lang, "ओटीपी कोड भेजा गया", "OTP Code Sent")}</span>
+              </div>
+              <h3 className="otp-screen-title" style={{ fontSize: "1.1rem", marginBottom: 6 }}>
+                {t(lang, "OTP दर्ज करें एवं नया पासवर्ड बनाएं", "Enter OTP & Create New Password")}
+              </h3>
+              <p className="otp-screen-desc" style={{ marginBottom: 14 }}>
+                {t(lang, "सत्यापन कोड इस ईमेल पर भेजा गया है:", "Verification code was sent to:")}{" "}
+                <span className="otp-target-email-pill">{maskedEmail || targetEmail}</span>
+              </p>
+
+              {/* 6-Digit OTP */}
+              <div className="login-field-group">
+                <label className="login-field-label">
+                  <span>🔢</span>
+                  <span>{t(lang, "6-अंकीय OTP कोड दर्ज करें *", "Enter 6-Digit OTP Code *")}</span>
+                </label>
+                <input
+                  className="otp-digits-input"
+                  value={resetOtp}
+                  onChange={(e) => { setResetOtp(e.target.value.replace(/\D/g, "").slice(0, 6)); setAuthError(""); }}
+                  placeholder="••••••"
+                  maxLength={6}
+                  inputMode="numeric"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              {/* New Password */}
+              <div className="login-field-group" style={{ marginTop: 12 }}>
+                <label className="login-field-label">
+                  <span>🔒</span>
+                  <span>{t(lang, "नया पासवर्ड बनाएं * (कम से कम 4 अक्षर)", "New Password * (Min 4 chars)")}</span>
+                </label>
+                <div className="login-input-wrap">
+                  <input
+                    className="login-form-input"
+                    type={showNewPass ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => { setNewPassword(e.target.value); setAuthError(""); }}
+                    placeholder={t(lang, "नया सुरक्षित पासवर्ड", "Enter new password")}
+                    required
+                    minLength={4}
+                    style={{ paddingRight: "44px" }}
+                  />
+                  <button
+                    type="button"
+                    className="login-toggle-pass-btn"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    tabIndex={-1}
+                    title={showNewPass ? "Hide" : "Show"}
+                  >
+                    {showNewPass ? "👁️" : "🙈"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div className="login-field-group" style={{ marginTop: 12 }}>
+                <label className="login-field-label">
+                  <span>🔒</span>
+                  <span>{t(lang, "नए पासवर्ड की पुनः पुष्टि करें *", "Confirm New Password *")}</span>
+                </label>
+                <div className="login-input-wrap">
+                  <input
+                    className="login-form-input"
+                    type={showNewPass ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); setAuthError(""); }}
+                    placeholder={t(lang, "नया पासवर्ड दोबारा लिखें", "Confirm new password")}
+                    required
+                    minLength={4}
+                  />
+                </div>
+              </div>
+
+              {/* Submit Reset Button */}
+              <button
+                type="submit"
+                className="login-submit-btn"
+                disabled={submitting || resetOtp.length !== 6 || newPassword.length < 4}
+                style={{ marginTop: 16 }}
+              >
+                {submitting ? (
+                  <>
+                    <span className="login-spinner"></span>
+                    <span>{t(lang, "पासवर्ड रीसेट हो रहा है...", "Resetting Password...")}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>✓</span>
+                    <span>{t(lang, "पासवर्ड रीसेट करें एवं लॉगिन करें", "Reset Password & Sign In")}</span>
+                  </>
+                )}
+              </button>
+
+              {/* Resend & Back Row */}
+              <div className="otp-resend-row" style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="otp-resend-link"
+                  onClick={() => { setForgotStep(1); setResetOtp(""); setAuthError(""); setAuthSuccess(""); }}
+                >
+                  ← {t(lang, "ईमेल बदलें", "Change Email")}
+                </button>
+
+                <div>
+                  {resendCooldown > 0 ? (
+                    <span className="otp-cooldown-text">
+                      ⏱️ {t(lang, `पुनः भेजें (${resendCooldown}s)`, `Resend in ${resendCooldown}s`)}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="otp-resend-link"
+                      onClick={() => handleSendForgotOtp()}
+                      disabled={submitting}
+                    >
+                      🔄 {t(lang, "पुनः OTP भेजें", "Resend OTP")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </form>
           )}
         </div>
       )}
@@ -2230,37 +3604,201 @@ export function Modals() {
 
   if (modal.kind === "memberMenu") {
     const userLvl = session?.level || (session?.isAdmin ? 1 : (session?.member?.level || 3));
+    const rawMember = session?.member || {};
+    // Find freshest member record from state
+    const m = (state.members || []).find((mem) => mem.id === rawMember.id || mem.memberCode === rawMember.memberCode) || rawMember;
+
+    const memberReceipts = (state.payments || []).filter(
+      (p) => p.memberId === m.id || p.memberCode === m.memberCode || (m.mobile && p.mobile === m.mobile)
+    );
+    const latestReceipt = memberReceipts[0] || null;
+
     body = (
-      <div style={{ padding: "16px 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#ffd166", display: "grid", placeItems: "center", fontSize: "1.3rem", fontWeight: 900 }}>
-            {session.member?.nameHi?.charAt(0) || "👤"}
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem" }}>{t(lang, session.member?.nameHi, session.member?.nameEn)}</div>
-            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{session.member?.memberCode || session.member?.username}</div>
+      <div style={{ padding: "20px 24px", maxWidth: 650, margin: "0 auto" }}>
+        {/* Profile Card Header */}
+        <div style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "center",
+          background: "linear-gradient(135deg, #051331 0%, #0a2558 100%)",
+          padding: "18px 20px",
+          borderRadius: 14,
+          color: "#ffffff",
+          marginBottom: 18,
+          boxShadow: "0 8px 20px rgba(5, 19, 49, 0.25)"
+        }}>
+          {m.photoUrl ? (
+            <img
+              src={m.photoUrl}
+              alt={m.nameHi || m.nameEn}
+              style={{ width: 68, height: 86, objectFit: "cover", borderRadius: 10, border: "2.5px solid #ffd166", flexShrink: 0 }}
+            />
+          ) : (
+            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "#ffd166", color: "#051331", display: "grid", placeItems: "center", fontSize: "1.8rem", fontWeight: 900, flexShrink: 0 }}>
+              {m.nameHi?.charAt(0) || m.nameEn?.charAt(0) || "👤"}
+            </div>
+          )}
+
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+              <span className={`badge badge-level${userLvl}`} style={{ fontSize: "0.8rem", padding: "3px 10px" }}>
+                {userLvl === 1 && "👑 Level 1 (Super Admin)"}
+                {userLvl === 2 && "⭐ Level 2 (Admin)"}
+                {userLvl === 3 && "🎖️ Level 3 (Member)"}
+                {userLvl === 4 && "👤 Level 4 (Guest)"}
+              </span>
+              <span style={{
+                background: m.status === "active" ? "#16a34a" : "#ca8a04",
+                color: "#ffffff",
+                padding: "2px 8px",
+                borderRadius: 12,
+                fontSize: "0.74rem",
+                fontWeight: 800
+              }}>
+                {m.status === "active" ? "✓ सक्रिय (Active)" : "⏳ लंबित (Pending)"}
+              </span>
+            </div>
+
+            <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#ffffff", lineHeight: 1.2 }}>
+              {t(lang, m.nameHi, m.nameEn)}
+            </div>
+            {m.nameEn && m.nameHi && (
+              <div style={{ fontSize: "0.88rem", color: "#ffd166", fontWeight: 700, marginTop: 2 }}>
+                {m.nameEn}
+              </div>
+            )}
+            <div style={{ fontSize: "0.84rem", color: "#93c5fd", fontWeight: 700, marginTop: 4 }}>
+              {t(lang, m.designationHi, m.designationEn) || (m.isCoreMember ? "प्रदेश पदाधिकारी" : "सक्रिय बैंक मित्र")} • <code>{m.memberCode || "—"}</code>
+            </div>
           </div>
         </div>
-        <div style={{ marginBottom: 16, background: "#f8fafc", padding: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{t(lang, "वर्तमान अधिकार स्तर:", "Access Level:")}</span>
-            <span className={`badge badge-level${userLvl}`}>
-              {userLvl === 1 && "👑 Level 1 (Super Admin)"}
-              {userLvl === 2 && "⭐ Level 2 (Admin)"}
-              {userLvl === 3 && "🎖️ Level 3 (Member)"}
-              {userLvl === 4 && "👤 Level 4 (Guest)"}
+
+        {/* Access Level Summary Box */}
+        <div style={{ background: "#f8fafc", padding: "12px 16px", borderRadius: 10, border: "1px solid #e2e8f0", marginBottom: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontWeight: 800, fontSize: "0.86rem", color: "var(--primary)" }}>
+              🔑 {t(lang, "अधिकार स्तर विवरण", "Access Level Privileges")}
+            </span>
+            <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 700 }}>
+              Level {userLvl}
             </span>
           </div>
-          <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
-            {userLvl === 1 && t(lang, "पूर्ण अधिकार: सभी संपादन + उपयोगकर्ता प्रबंधन (केवल 1 खाता)।", "All Access: All editing privileges + User Management.")}
-            {userLvl === 2 && t(lang, "प्रशासक: वेबसाइट + सदस्य सूची + एडमिन पैनल (User Management को छोड़कर)।", "Admin: Website + Members + Admin Panel (except User Management).")}
-            {userLvl === 3 && t(lang, "सत्यापित सदस्य: संपूर्ण वेबसाइट + सदस्य सूची + डिजिटल पहचान पत्र।", "Verified Member: Website + Members Directory + Digital ID.")}
-            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट + सदस्य सूची। एडमिन पैनल वर्जित।", "Visitor: Public website + Member Directory. Admin Panel restricted.")}
+          <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569", lineHeight: 1.45 }}>
+            {userLvl === 1 && t(lang, "सुपर एडमिन (1 खाता केवल): संपूर्ण नियंत्रण, वेबसाइट + सदस्य सूची + एडमिन पैनल + उपयोगकर्ता प्रबंधन।", "Super Admin (1 account only): Full system access, User Management & all settings.")}
+            {userLvl === 2 && t(lang, "प्रशासक: संपूर्ण वेबसाइट + सदस्य सूची + एडमिन पैनल संपादन (User Management को छोड़कर)।", "Sub-Admin: Website, Members Directory & Admin Panel editing (except User Management).")}
+            {userLvl === 3 && t(lang, "सत्यापित सक्रिय सदस्य: संपूर्ण वेबसाइट + 75 जनपद सदस्य सूची + डिजिटल पहचान पत्र, नियुक्ति पत्र व शुल्क रसीद।", "Verified Active Member: Website, 75 Districts Directory, Digital ID Card, Appointment Letter & Receipt.")}
+            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट।", "Guest Visitor: Public website.")}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+
+        {/* Section 1: Personal & Contact Information */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>👤</span>
+            <span>{t(lang, "व्यक्तिगत एवं संपर्क विवरण", "Personal & Contact Details")}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "पिता का नाम:", "Father's Name:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{t(lang, m.fatherName, m.fatherNameEn) || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "मोबाइल नंबर (WhatsApp):", "Mobile (WhatsApp):")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}><b>{m.mobile || "—"}</b></span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "ईमेल पता:", "Email Address:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800, wordBreak: "break-all" }}>
+                {m.email || "—"} {m.isEmailVerified && <span style={{ color: "#16a34a", fontSize: "0.78rem", fontWeight: 800 }}>✓ {t(lang, "सत्यापित", "Verified")}</span>}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "रक्त समूह (Blood Group):", "Blood Group:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.bloodGroup || "—"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Banking & CSP Operation */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>🏦</span>
+            <span>{t(lang, "बैंकिंग एवं सीएसपी संचालन विवरण", "Banking & CSP Operation Details")}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "संबंधित बैंक:", "Associated Bank:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}><b>{m.bankName || "—"}</b></span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "कॉर्पोरेट बीसी कंपनी:", "Corporate BC Company:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.bcCompany || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "केओ / सीएसपी कोड:", "KO / CSP Code:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}><code>{m.koCode || "—"}</code></span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "जनपद (District):", "District:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{localizeDual(m.district, lang) || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "ब्लॉक / केंद्र:", "Block / Center:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{t(lang, m.block, m.blockEn) || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सदस्यता श्रेणी:", "Member Category:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.memberCategory || "General Member"}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: Membership Status & Payment */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>📜</span>
+            <span>{t(lang, "सदस्यता पंजीकरण एवं शुल्क विवरण", "Membership & Fee Record")}</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सदस्यता प्रारंभ दिनांक:", "Joined Date:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.joinedDate || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "मान्यता समाप्ति दिनांक:", "Valid Until:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.validUntil || "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "जमा वार्षिक सदस्यता शुल्क:", "Annual Fee Paid:")}</span>
+              <span style={{ color: "#15803d", fontWeight: 800 }}>₹{m.feePaid || 251}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
+              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "शुल्क रसीद संख्या:", "Receipt No:")}</span>
+              <span style={{ color: "var(--text)", fontWeight: 800 }}><code>{latestReceipt?.receiptNo || "UPBMS-RCP-2026"}</code></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons Toolbar */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", paddingTop: 14, borderTop: "1.5px solid #e2e8f0" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => { setRoute("idcard"); setModal(null); }}
+            >
+              🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र", "View ID Card & Letter")}
+            </button>
+            {userLvl <= 2 && (
+              <button
+                className="btn btn-accent btn-sm"
+                onClick={() => { setRoute("admin"); setModal(null); }}
+              >
+                ⚙️ {t(lang, "एडमिन पैनल", "Admin Panel")}
+              </button>
+            )}
+          </div>
           <button className="btn btn-danger btn-sm" onClick={logout}>
-            🔒 {t(lang, "लॉगआउट करें (Level 4 मोड)", "Logout (Switch to Level 4)")}
+            🔒 {t(lang, "लॉगआउट करें (Level 4)", "Logout (Level 4)")}
           </button>
         </div>
       </div>

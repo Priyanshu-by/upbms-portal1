@@ -6,6 +6,7 @@ import { t, localizeDual } from "../utils";
 const TABS = [
   ["dashboard", "📊 डैशबोर्ड", "📊 Dashboard"],
   ["users", "👥 उपयोगकर्ता प्रबंधन", "👥 User Management"],
+  ["gatewaysettings", "💳 गेटवे व भुगतान विकल्प", "💳 Gateway & Payment Options"],
   ["loginsettings", "🔐 लॉगिन सिस्टम विकल्प", "🔐 Login System Options"],
   ["signs", "✍️ हस्ताक्षर एवं मुहर", "✍️ Signature & Seal"],
   ["menus", "🧭 मेनू व सेक्शन", "🧭 Menus & Sections"],
@@ -168,8 +169,8 @@ export function AdminPage() {
 
   const saveSettings = (patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg);
 
-  // Filter tabs: Level 2 admins cannot see or access User Management or Login System Settings!
-  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "loginsettings") || isSuperAdmin);
+  // Filter tabs: Level 2 admins cannot see or access User Management, Gateways, or Login System Settings!
+  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "loginsettings" && id !== "gatewaysettings") || isSuperAdmin);
 
   return (
     <div className="container" style={{ padding: "18px 0 40px" }}>
@@ -200,6 +201,16 @@ export function AdminPage() {
               <div className="card-panel">
                 <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
                 <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है। Level 2 प्रशासक इसे एक्सेस नहीं कर सकते।", "User Management is strictly restricted to Level 1 Super Admin. Level 2 Admins cannot access this section.")}</p>
+              </div>
+            )
+          )}
+          {tab === "gatewaysettings" && (
+            isSuperAdmin ? (
+              <GatewaySettingsTab state={state} saveSettings={saveSettings} lang={lang} setRoute={setRoute} />
+            ) : (
+              <div className="card-panel">
+                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
+                <p>{t(lang, "गेटवे व भुगतान सेटिंग्स केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है।", "Payment gateway options are strictly restricted to Level 1 Super Admin.")}</p>
               </div>
             )
           )}
@@ -401,6 +412,374 @@ export function LoginSettingsTab({ state, saveSettings, lang, setRoute, isEmbedd
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function GatewaySettingsTab({ state, saveSettings, lang, setRoute }) {
+  const currentGateways = state?.settings?.paymentGateways || {
+    enableRazorpay: true,
+    enablePnbQr: true,
+    enableManualUpi: true,
+    defaultGateway: "pnb_qr"
+  };
+
+  const [enablePnbQr, setEnablePnbQr] = useState(Boolean(currentGateways.enablePnbQr ?? true));
+  const [enableRazorpay, setEnableRazorpay] = useState(Boolean(currentGateways.enableRazorpay ?? true));
+  const [enableManualUpi, setEnableManualUpi] = useState(Boolean(currentGateways.enableManualUpi ?? true));
+  const [defaultGateway, setDefaultGateway] = useState(currentGateways.defaultGateway || "pnb_qr");
+
+  // Bank & UPI details
+  const [upiId, setUpiId] = useState(state?.settings?.upiId || "");
+  const [upiPayeeName, setUpiPayeeName] = useState(state?.settings?.upiPayeeName || "");
+  const [bankAccountNumber, setBankAccountNumber] = useState(state?.settings?.bankAccountNumber || "");
+  const [bankIfsc, setBankIfsc] = useState(state?.settings?.bankIfsc || "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (state?.settings?.paymentGateways) {
+      setEnablePnbQr(Boolean(state.settings.paymentGateways.enablePnbQr ?? true));
+      setEnableRazorpay(Boolean(state.settings.paymentGateways.enableRazorpay ?? true));
+      setEnableManualUpi(Boolean(state.settings.paymentGateways.enableManualUpi ?? true));
+      setDefaultGateway(state.settings.paymentGateways.defaultGateway || "pnb_qr");
+    }
+    if (state?.settings) {
+      setUpiId(state.settings.upiId || "");
+      setUpiPayeeName(state.settings.upiPayeeName || "");
+      setBankAccountNumber(state.settings.bankAccountNumber || "");
+      setBankIfsc(state.settings.bankIfsc || "");
+    }
+  }, [state?.settings]);
+
+  async function handleSave() {
+    if (!enablePnbQr && !enableRazorpay && !enableManualUpi) {
+      alert(t(lang, "कम से कम एक भुगतान विकल्प सक्रिय होना अनिवार्य है!", "At least one payment gateway/method must remain enabled!"));
+      return;
+    }
+
+    let finalDefault = defaultGateway;
+    if (finalDefault === "pnb_qr" && !enablePnbQr) {
+      finalDefault = enableRazorpay ? "razorpay" : "manual_upi";
+    } else if (finalDefault === "razorpay" && !enableRazorpay) {
+      finalDefault = enablePnbQr ? "pnb_qr" : "manual_upi";
+    } else if (finalDefault === "manual_upi" && !enableManualUpi) {
+      finalDefault = enablePnbQr ? "pnb_qr" : "razorpay";
+    }
+
+    setSaving(true);
+    try {
+      await saveSettings(
+        {
+          paymentGateways: {
+            enablePnbQr,
+            enableRazorpay,
+            enableManualUpi,
+            defaultGateway: finalDefault
+          },
+          upiId,
+          upiPayeeName,
+          bankAccountNumber,
+          bankIfsc
+        },
+        t(lang, "भुगतान गेटवे सेटिंग्स सफलतापूर्वक सहेजी गईं!", "Payment gateway options saved successfully!")
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="card-panel" style={{ padding: "28px 24px", borderRadius: 16 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+        <div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800, marginBottom: 8 }}>
+            👑 {t(lang, "केवल Level 1 (सुपर एडमिन) नियंत्रण", "Level 1 Super Admin Exclusive")}
+          </div>
+          <h2 style={{ color: "var(--primary)", fontSize: "1.35rem", fontWeight: 900, margin: 0 }}>
+            💳 {t(lang, "भुगतान गेटवे व चेकआउट विकल्प प्रबंधन", "Payment Gateways & Checkout Options")}
+          </h2>
+          <p style={{ color: "#64748b", fontSize: "0.86rem", margin: "6px 0 0" }}>
+            {t(
+              lang,
+              "सार्वजनिक 'Join Us' सदस्यता पंजीकरण पृष्ठ पर कौन से भुगतान गेटवे प्रदर्शित होंगे, यहाँ से प्रबंधित करें।",
+              "Control which payment gateways appear for applicants on the public 'Join Us' membership page."
+            )}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          className="btn btn-accent btn-md"
+          disabled={saving}
+          onClick={handleSave}
+          style={{ minWidth: 160, fontWeight: 900, boxShadow: "0 4px 12px rgba(245, 158, 11, 0.35)" }}
+        >
+          {saving ? t(lang, "सहेज रहे हैं...", "Saving...") : `💾 ${t(lang, "सेटिंग्स सुरक्षित करें", "Save Settings")}`}
+        </button>
+      </div>
+
+      {/* 3 Gateway Cards Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 24 }}>
+        {/* Option 1: PNB Dynamic QR */}
+        <div style={{
+          border: `2px solid ${enablePnbQr ? "#16a34a" : "#cbd5e1"}`,
+          borderRadius: 14,
+          padding: "18px 20px",
+          background: enablePnbQr ? "#f0fdf4" : "#f8fafc",
+          transition: "all 0.2s ease"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: "#dcfce7", display: "grid", placeItems: "center", fontSize: "1.4rem" }}>
+                🏦
+              </div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: "1rem", color: "#1e293b" }}>
+                  PNB Dynamic QR API
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: 800 }}>
+                  {t(lang, "आधिकारिक मर्चेंट गेटवे", "Official Merchant API")}
+                </div>
+              </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={enablePnbQr}
+                onChange={(e) => setEnablePnbQr(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "0.82rem", fontWeight: 800, color: enablePnbQr ? "#16a34a" : "#64748b" }}>
+                {enablePnbQr ? t(lang, "सक्रिय (Active)", "Active") : t(lang, "बंद (Off)", "Off")}
+              </span>
+            </label>
+          </div>
+
+          <p style={{ fontSize: "0.82rem", color: "#475569", lineHeight: 1.5, margin: "0 0 14px" }}>
+            {t(
+              lang,
+              "प्रत्येक आवेदक हेतु सटीक सदस्यता शुल्क (कैलेंडर वर्ष अनुसार) और यूनीक आर्डर कोड युक्त डायनामिक UPI QR कोड जनरेट करता है। GPay, PhonePe, Paytm द्वारा स्कैन करने पर सर्वर-टू-सर्वर स्वतः सत्यापन व Level 3 सक्रियण।",
+              "Generates per-order dynamic UPI QR with exact calendar membership fee. Real-time server-to-server confirmation across GPay, PhonePe, Paytm, and BHIM with instant Level 3 activation."
+            )}
+          </p>
+
+          <div style={{ background: "#ffffff", borderRadius: 8, padding: "8px 12px", border: "1px solid #cbd5e1", fontSize: "0.78rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+              <span style={{ color: "#64748b" }}>VPA:</span>
+              <b>{state?.settings?.pnbMerchantVpa || "upbms@pnb"}</b>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#64748b" }}>Merchant:</span>
+              <b>Punjab National Bank</b>
+            </div>
+          </div>
+        </div>
+
+        {/* Option 2: Razorpay Online Checkout */}
+        <div style={{
+          border: `2px solid ${enableRazorpay ? "#2563eb" : "#cbd5e1"}`,
+          borderRadius: 14,
+          padding: "18px 20px",
+          background: enableRazorpay ? "#eff6ff" : "#f8fafc",
+          transition: "all 0.2s ease"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: "#dbeafe", display: "grid", placeItems: "center", fontSize: "1.4rem" }}>
+                ⚡
+              </div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: "1rem", color: "#1e293b" }}>
+                  Razorpay Checkout
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "#2563eb", fontWeight: 800 }}>
+                  {t(lang, "मल्टी-पेमेंट गेटवे (Cards, UPI, NB)", "Cards, UPI, NetBanking")}
+                </div>
+              </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={enableRazorpay}
+                onChange={(e) => setEnableRazorpay(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "0.82rem", fontWeight: 800, color: enableRazorpay ? "#2563eb" : "#64748b" }}>
+                {enableRazorpay ? t(lang, "सक्रिय (Active)", "Active") : t(lang, "बंद (Off)", "Off")}
+              </span>
+            </label>
+          </div>
+
+          <p style={{ fontSize: "0.82rem", color: "#475569", lineHeight: 1.5, margin: "0 0 14px" }}>
+            {t(
+              lang,
+              "Razorpay सुरक्षित चेकआउट मॉडल में डेबिट कार्ड, क्रेडिट कार्ड, नेट बैंकिंग, UPI एवं वॉलेट्स का पूर्ण समर्थन। HMAC SHA-256 सुरक्षा हस्ताक्षर सत्यापन एवं वेबहुक ऑटो-कंफर्मेशन।",
+              "Full online gateway modal supporting Debit/Credit Cards, Net Banking, UPI, and Wallets with cryptographic HMAC SHA-256 verification and instant membership activation."
+            )}
+          </p>
+
+          <div style={{ background: "#ffffff", borderRadius: 8, padding: "8px 12px", border: "1px solid #cbd5e1", fontSize: "0.78rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+              <span style={{ color: "#64748b" }}>Key ID:</span>
+              <code>{state?.settings?.razorpayKeyId ? "Configured in .env" : "Configured via .env"}</code>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#64748b" }}>Security:</span>
+              <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ SHA-256 Protected</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Option 3: Manual UPI & UTR Entry */}
+        <div style={{
+          border: `2px solid ${enableManualUpi ? "#f59e0b" : "#cbd5e1"}`,
+          borderRadius: 14,
+          padding: "18px 20px",
+          background: enableManualUpi ? "#fffbeb" : "#f8fafc",
+          transition: "all 0.2s ease"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: "#fef3c7", display: "grid", placeItems: "center", fontSize: "1.4rem" }}>
+                📱
+              </div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: "1rem", color: "#1e293b" }}>
+                  Manual UPI & UTR
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "#b45309", fontWeight: 800 }}>
+                  {t(lang, "प्रत्यक्ष बैंक ट्रांसफर / UTR", "Direct Bank Transfer")}
+                </div>
+              </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", cursor: "pointer", gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={enableManualUpi}
+                onChange={(e) => setEnableManualUpi(e.target.checked)}
+                style={{ width: 18, height: 18, cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "0.82rem", fontWeight: 800, color: enableManualUpi ? "#b45309" : "#64748b" }}>
+                {enableManualUpi ? t(lang, "सक्रिय (Active)", "Active") : t(lang, "बंद (Off)", "Off")}
+              </span>
+            </label>
+          </div>
+
+          <p style={{ fontSize: "0.82rem", color: "#475569", lineHeight: 1.5, margin: "0 0 14px" }}>
+            {t(
+              lang,
+              "पारंपरिक तरीका जहाँ आवेदक संस्था के स्थायी UPI QR कोड को स्कैन करके अथवा बैंक खाते में सीधे NEFT/IMPS द्वारा शुल्क भेजकर 12-अंकीय UTR नंबर फॉर्म में दर्ज करते हैं।",
+              "Traditional method where applicants scan the association's static UPI QR code or transfer directly to the bank account and enter their 12-digit UTR transaction reference."
+            )}
+          </p>
+
+          <div style={{ background: "#ffffff", borderRadius: 8, padding: "8px 12px", border: "1px solid #cbd5e1", fontSize: "0.78rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+              <span style={{ color: "#64748b" }}>UPI ID:</span>
+              <b>{upiId || "Not set"}</b>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#64748b" }}>Bank:</span>
+              <b>{bankAccountNumber ? `${bankAccountNumber} (${bankIfsc})` : "Not set"}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Default Gateway Selector */}
+      <div style={{ background: "#f8fafc", borderRadius: 12, padding: "16px 20px", border: "1px solid #e2e8f0", marginBottom: 24 }}>
+        <label style={{ fontWeight: 900, color: "var(--primary)", fontSize: "0.92rem", display: "block", marginBottom: 10 }}>
+          🎯 {t(lang, "डिफ़ॉल्ट चयनित भुगतान विकल्प (Default Pre-selected Option) *", "Default Pre-selected Payment Option *")}
+        </label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+          {enablePnbQr && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.88rem", fontWeight: 700 }}>
+              <input
+                type="radio"
+                name="defaultGateway"
+                value="pnb_qr"
+                checked={defaultGateway === "pnb_qr"}
+                onChange={(e) => setDefaultGateway(e.target.value)}
+              />
+              <span>🏦 PNB Dynamic QR API ({t(lang, "अनुशंसित", "Recommended")})</span>
+            </label>
+          )}
+
+          {enableRazorpay && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.88rem", fontWeight: 700 }}>
+              <input
+                type="radio"
+                name="defaultGateway"
+                value="razorpay"
+                checked={defaultGateway === "razorpay"}
+                onChange={(e) => setDefaultGateway(e.target.value)}
+              />
+              <span>⚡ Razorpay Online Checkout</span>
+            </label>
+          )}
+
+          {enableManualUpi && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.88rem", fontWeight: 700 }}>
+              <input
+                type="radio"
+                name="defaultGateway"
+                value="manual_upi"
+                checked={defaultGateway === "manual_upi"}
+                onChange={(e) => setDefaultGateway(e.target.value)}
+              />
+              <span>📱 Manual UPI & UTR Entry</span>
+            </label>
+          )}
+        </div>
+      </div>
+
+      {/* Manual UPI & Bank Credentials Box */}
+      <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "18px 20px", marginBottom: 20 }}>
+        <h4 style={{ margin: "0 0 12px", color: "var(--primary)", fontSize: "0.98rem", fontWeight: 900 }}>
+          🏛️ {t(lang, "संस्था का बैंक खाता एवं UPI विवरण (Manual UPI Details)", "Association Bank & UPI Credentials")}
+        </h4>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+          <Field label={t(lang, "आधिकारिक UPI ID", "Official UPI ID")}>
+            <Inp value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="e.g. upbmsofficial@okaxis" />
+          </Field>
+          <Field label={t(lang, "खाताधारक / पेई नाम", "Payee Display Name")}>
+            <Inp value={upiPayeeName} onChange={(e) => setUpiPayeeName(e.target.value)} placeholder="Uttar Pradesh Bank Mitra Sangh" />
+          </Field>
+          <Field label={t(lang, "बैंक खाता संख्या", "Bank Account Number")}>
+            <Inp value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} placeholder="e.g. 520101234567890" />
+          </Field>
+          <Field label={t(lang, "बैंक IFSC कोड", "Bank IFSC Code")}>
+            <Inp value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value.toUpperCase())} placeholder="e.g. PUNB0000000" />
+          </Field>
+        </div>
+      </div>
+
+      {/* Save Button & Preview Link */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <button
+          type="button"
+          className="btn btn-accent btn-lg"
+          disabled={saving}
+          onClick={handleSave}
+          style={{ minWidth: 200, fontWeight: 900 }}
+        >
+          {saving ? t(lang, "सहेज रहे हैं...", "Saving...") : `💾 ${t(lang, "सेटिंग्स सुरक्षित करें", "Save Payment Gateways")}`}
+        </button>
+
+        {setRoute && (
+          <button
+            type="button"
+            className="btn btn-outline btn-md"
+            onClick={() => setRoute("join")}
+          >
+            🌐 {t(lang, "Join Us पृष्ठ पर चेकआउट देखें", "View Checkout on Join Page")}
+          </button>
+        )}
       </div>
     </div>
   );
