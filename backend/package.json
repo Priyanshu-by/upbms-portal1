@@ -23,7 +23,6 @@
     "mongodb-memory-server": "^10.1.4",
     "mongoose": "^8.9.5",
     "multer": "^2.5.0",
-    "nodemailer": "^10.6.0",
-    "upbms-mern": "file:../.."
+    "nodemailer": "^10.6.0"
   }
 }

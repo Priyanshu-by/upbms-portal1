@@ -119,7 +119,7 @@ async function loadDb() {
       messageHi: "उत्तर प्रदेश बैंक मित्र संघ के प्रांतीय डिजिटल नियंत्रण कक्ष में आपका स्वागत है।",
       messageEn: "Welcome to the State Digital Control Room of Uttar Pradesh Bank Mitra Sangh.",
       signatoryId: "sig-gs",
-      password: "admin123",
+      password: "admin@123",
       status: "active",
       level: 1,
       role: "superadmin",
