@@ -71,7 +71,7 @@ export function AdminPage() {
                 {t(lang, "प्रशासनिक नियंत्रण कक्ष", "Admin Control Panel")}
               </h2>
               <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginTop: 6 }}>
-                {t(lang, "केवल अधिकृत Level 1 एवं Level 2 प्रशासक खातों हेतु", "For authorized Level 1 & Level 2 administrators only")}
+                {t(lang, "केवल अधिकृत मुख्य प्रशासक खातों हेतु", "For authorized administrators only")}
               </p>
             </div>
 
@@ -104,14 +104,11 @@ export function AdminPage() {
                       type="password"
                       value={pin}
                       onChange={(e) => setPin(e.target.value)}
-                      placeholder="e.g. 1234"
+                      placeholder="••••"
                       required
                       autoFocus
                     />
                   </label>
-                  <div style={{ fontSize: "0.8rem", color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px 12px", borderRadius: 6, margin: "10px 0 16px" }}>
-                    💡 <b>{t(lang, "डेमो पिन:", "Demo PIN:")}</b> <code>1234</code> (Level 1 Super Admin)
-                  </div>
                 </div>
               ) : (
                 <div>
@@ -121,7 +118,7 @@ export function AdminPage() {
                       className="form-control"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="e.g. admin or UPBMS-CORE-002"
+                      placeholder="e.g. admin"
                       required
                       autoFocus
                     />
@@ -133,14 +130,10 @@ export function AdminPage() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="e.g. admin123 or 123456"
+                      placeholder="••••••••"
                       required
                     />
                   </label>
-                  <div style={{ fontSize: "0.78rem", color: "#15803d", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "8px 12px", borderRadius: 6, margin: "10px 0 16px", lineHeight: 1.5 }}>
-                    <div>👑 <b>Level 1 (Super Admin):</b> <code>admin</code> / <code>admin123</code></div>
-                    <div>⭐ <b>Level 2 (Admin):</b> <code>UPBMS-CORE-002</code> / <code>123456</code></div>
-                  </div>
                 </div>
               )}
 
@@ -177,7 +170,7 @@ export function AdminPage() {
         <aside className="admin-sidebar no-print">
           <div style={{ padding: "8px 10px 14px" }}>
             <div style={{ color: "#ffd166", fontWeight: 900, fontSize: "0.74rem" }}>
-              {isSuperAdmin ? "👑 LEVEL 1 (SUPER ADMIN)" : "⭐ LEVEL 2 (ADMIN)"}
+              {isSuperAdmin ? "👑 SUPER ADMIN" : "⭐ ADMIN"}
             </div>
             <div style={{ fontWeight: 900 }}>{t(lang, "सुपर एडमिन कंट्रोल पैनल", "Super Admin Control Panel")}</div>
           </div>
@@ -188,7 +181,7 @@ export function AdminPage() {
           ))}
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
             <button className="btn btn-white btn-sm" onClick={() => setRoute("home")}>🌐 {t(lang, "वेबसाइट प्रीव्यू", "Website Preview")}</button>
-            <button className="btn btn-danger btn-sm" onClick={logout}>🔒 {t(lang, "लॉगआउट (Level 4 मोड)", "Logout (Level 4)")}</button>
+            <button className="btn btn-danger btn-sm" onClick={logout}>🔒 {t(lang, "लॉगआउट", "Logout")}</button>
           </div>
         </aside>
         <section style={{ minWidth: 0 }}>
@@ -199,7 +192,7 @@ export function AdminPage() {
             ) : (
               <div className="card-panel">
                 <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
-                <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है। Level 2 प्रशासक इसे एक्सेस नहीं कर सकते।", "User Management is strictly restricted to Level 1 Super Admin. Level 2 Admins cannot access this section.")}</p>
+                <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल सुपर एडमिन के लिए आरक्षित है।", "User Management is strictly restricted to Super Admin.")}</p>
               </div>
             )
           )}
@@ -209,7 +202,7 @@ export function AdminPage() {
             ) : (
               <div className="card-panel">
                 <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
-                <p>{t(lang, "गेटवे व भुगतान सेटिंग्स केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है।", "Payment gateway options are strictly restricted to Level 1 Super Admin.")}</p>
+                <p>{t(lang, "गेटवे व भुगतान सेटिंग्स केवल सुपर एडमिन के लिए आरक्षित है।", "Payment gateway options are strictly restricted to Super Admin.")}</p>
               </div>
             )
           )}
@@ -742,16 +735,16 @@ function UsersManagement({ portal, run }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ color: "#ffd166", fontWeight: 800, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
-              👑 ACCESS CONTROL & ROLES (LEVEL 1 EXCLUSIVE)
+              👑 ACCESS CONTROL & ROLES (SUPER ADMIN EXCLUSIVE)
             </div>
             <h2 style={{ margin: "0 0 6px", fontSize: "1.5rem", fontWeight: 900, color: "#fff" }}>
-              {t(lang, "👥 उपयोगकर्ता एवं अनुमति स्तर प्रबंधन", "👥 User Access Levels & Permissions")}
+              {t(lang, "👥 उपयोगकर्ता एवं अनुमति स्तर प्रबंधन", "👥 User Access & Role Permissions")}
             </h2>
             <p style={{ margin: 0, color: "#cbd5e1", fontSize: "0.92rem", lineHeight: 1.5, maxWidth: 750 }}>
               {t(
                 lang,
-                "यहाँ से आप प्रत्येक पंजीकृत उपयोगकर्ता के अधिकार स्तर (Level 1, 2, 3, 4) देख और अपग्रेड कर सकते हैं। केवल Level 1 सुपर एडमिन को उपयोगकर्ता स्तर बदलने का पूर्ण अधिकार है।",
-                "View and manage access levels (Levels 1, 2, 3, 4) for all users. Only Level 1 Super Admin has authority to upgrade or modify user access levels."
+                "यहाँ से आप प्रत्येक पंजीकृत उपयोगकर्ता के अधिकार व रोल (सुपर एडमिन, प्रशासक, सदस्य) देख और अपग्रेड कर सकते हैं। केवल सुपर एडमिन को उपयोगकर्ता रोल बदलने का पूर्ण अधिकार है।",
+                "View and manage user roles (Super Admin, Admin, Member) for all users. Only Super Admin has authority to upgrade or modify user roles."
               )}
             </p>
           </div>
@@ -766,7 +759,7 @@ function UsersManagement({ portal, run }) {
         {/* Level 1 Card */}
         <div className="card-panel" style={{ borderTop: "4px solid #f59e0b", padding: "16px 18px", background: "#fffdf5" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level1">👑 LEVEL 1</span>
+            <span className="badge badge-level1">👑 SUPER ADMIN</span>
             <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#b45309" }}>{levelCounts[1]} {t(lang, "खाता", "Account")}</span>
           </div>
           <div style={{ fontWeight: 800, color: "#92400e", fontSize: "0.95rem" }}>
@@ -780,7 +773,7 @@ function UsersManagement({ portal, run }) {
         {/* Level 2 Card */}
         <div className="card-panel" style={{ borderTop: "4px solid #2563eb", padding: "16px 18px", background: "#f8faff" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level2">⭐ LEVEL 2</span>
+            <span className="badge badge-level2">⭐ ADMIN</span>
             <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1d4ed8" }}>{levelCounts[2]}</span>
           </div>
           <div style={{ fontWeight: 800, color: "#1e40af", fontSize: "0.95rem" }}>
@@ -794,7 +787,7 @@ function UsersManagement({ portal, run }) {
         {/* Level 3 Card */}
         <div className="card-panel" style={{ borderTop: "4px solid #10b981", padding: "16px 18px", background: "#f6fef9" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level3">🎖️ LEVEL 3</span>
+            <span className="badge badge-level3">🎖️ ACTIVE MEMBER</span>
             <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#047857" }}>{levelCounts[3]}</span>
           </div>
           <div style={{ fontWeight: 800, color: "#065f46", fontSize: "0.95rem" }}>
@@ -811,7 +804,7 @@ function UsersManagement({ portal, run }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="badge badge-level1" style={{ fontSize: "0.85rem", padding: "3px 10px" }}>👑 LEVEL 1 SUPER ADMIN</span>
+              <span className="badge badge-level1" style={{ fontSize: "0.85rem", padding: "3px 10px" }}>👑 SUPER ADMIN</span>
               <span style={{ color: "#b45309", fontWeight: 800, fontSize: "0.88rem" }}>
                 ({t(lang, "नियम: संपूर्ण प्रणाली में केवल 1 खाता मान्य", "Rule: Exactly One Account Permitted")})
               </span>
@@ -872,7 +865,7 @@ function UsersManagement({ portal, run }) {
       <div className="card-panel">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14, marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "var(--primary)" }}>
-            📋 {t(lang, "समस्त पंजीकृत उपयोगकर्ता एवं स्तर अपग्रेड", "All Users & Level Upgrade")} ({filteredUsers.length})
+            📋 {t(lang, "समस्त पंजीकृत उपयोगकर्ता एवं रोल प्रबंधन", "All Users & Role Management")} ({filteredUsers.length})
           </h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-muted)" }}>{t(lang, "फ़िल्टर:", "Filter:")}</span>
@@ -884,7 +877,7 @@ function UsersManagement({ portal, run }) {
                 style={{ padding: "4px 10px", fontSize: "0.8rem", fontWeight: 800 }}
                 onClick={() => setLevelFilter(lvl)}
               >
-                {lvl === "all" ? t(lang, "सभी (All)", "All") : `Level ${lvl}`}
+                {lvl === "all" ? t(lang, "सभी (All)", "All") : lvl === "1" ? t(lang, "सुपर एडमिन", "Super Admin") : lvl === "2" ? t(lang, "प्रशासक", "Admin") : t(lang, "सदस्य", "Member")}
               </button>
             ))}
           </div>
@@ -911,8 +904,8 @@ function UsersManagement({ portal, run }) {
                   <th>{t(lang, "यूज़र / सदस्य कोड", "User / Member Code")}</th>
                   <th>{t(lang, "नाम एवं पद", "Name & Designation")}</th>
                   <th>{t(lang, "मोबाइल व जनपद", "Mobile & District")}</th>
-                  <th>{t(lang, "वर्तमान स्तर", "Current Level")}</th>
-                  <th style={{ minWidth: 190 }}>{t(lang, "स्तर अपग्रेड / परिवर्तन", "Upgrade / Change Level")}</th>
+                  <th>{t(lang, "वर्तमान पद / रोल", "Current Role")}</th>
+                  <th style={{ minWidth: 190 }}>{t(lang, "रोल परिवर्तन / अपग्रेड", "Change Role / Upgrade")}</th>
                   <th>{t(lang, "स्थिति", "Status")}</th>
                   <th>{t(lang, "कार्रवाई", "Action")}</th>
                 </tr>
@@ -936,9 +929,9 @@ function UsersManagement({ portal, run }) {
                       </td>
                       <td>
                         <span className={`badge badge-level${u.level}`}>
-                          {u.level === 1 && "👑 Level 1"}
-                          {u.level === 2 && "⭐ Level 2"}
-                          {u.level === 3 && "🎖️ Level 3"}
+                          {u.level === 1 && "👑 Super Admin"}
+                          {u.level === 2 && "⭐ Admin"}
+                          {u.level === 3 && "🎖️ Active Member"}
                         </span>
                       </td>
                       <td>
@@ -955,8 +948,8 @@ function UsersManagement({ portal, run }) {
                               onChange={(e) => changeLevel(u.id, e.target.value)}
                               style={{ fontWeight: 800, fontSize: "0.82rem", padding: "4px 8px", width: "auto" }}
                             >
-                              <option value={2}>⭐ Level 2 (Admin)</option>
-                              <option value={3}>🎖️ Level 3 (Member)</option>
+                              <option value={2}>⭐ Admin</option>
+                              <option value={3}>🎖️ Active Member</option>
                             </select>
                             {updatingId === u.id && <span style={{ fontSize: "0.75rem", color: "var(--accent)" }}>⏳</span>}
                           </div>

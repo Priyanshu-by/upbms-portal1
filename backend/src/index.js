@@ -361,7 +361,7 @@ app.post("/api/admin/login", (req, res) => {
 
   return res.status(401).json({
     ok: false,
-    error: "गलत एडमिन पिन या क्रेडेंशियल! (डेमो पिन: 1234 अथवा User: admin / Pass: admin123) / Incorrect Admin credentials."
+    error: "गलत एडमिन पिन या क्रेडेंशियल! / Incorrect Admin credentials."
   });
 });
 

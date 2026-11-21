@@ -95,14 +95,14 @@ async function loadDb() {
       id: "mem-superadmin-1",
       memberCode: "UPBMS-ADMIN-01",
       username: "admin",
-      nameHi: "प्रांतीय मुख्य प्रशासक (सुपर एडमिन)",
-      nameEn: "State Chief Administrator (Super Admin)",
+      nameHi: "प्रांतीय मुख्य प्रशासक",
+      nameEn: "State Chief Administrator",
       fatherName: "श्री सत्य प्रकाश",
       fatherNameEn: "Shri Satya Prakash",
       isCoreMember: true,
       memberCategory: "Super Admin (मुख्य प्रशासक)",
-      designationHi: "मुख्य प्रशासक (Level 1)",
-      designationEn: "Chief Administrator (Level 1)",
+      designationHi: "मुख्य प्रशासक",
+      designationEn: "Chief Administrator",
       displayOrder: 0,
       district: "लखनऊ (Lucknow)",
       block: "हज़रतगंज",
@@ -119,7 +119,7 @@ async function loadDb() {
       messageHi: "उत्तर प्रदेश बैंक मित्र संघ के प्रांतीय डिजिटल नियंत्रण कक्ष में आपका स्वागत है।",
       messageEn: "Welcome to the State Digital Control Room of Uttar Pradesh Bank Mitra Sangh.",
       signatoryId: "sig-gs",
-      password: "admin123",
+      password: "admin@123",
       status: "active",
       level: 1,
       role: "superadmin",
@@ -131,6 +131,9 @@ async function loadDb() {
   } else {
     superAdmin.level = 1;
     if (!superAdmin.username) superAdmin.username = "admin";
+    if (superAdmin.password === "admin123") superAdmin.password = "admin@123";
+    if (superAdmin.designationHi?.includes("Level 1")) superAdmin.designationHi = "मुख्य प्रशासक";
+    if (superAdmin.designationEn?.includes("Level 1")) superAdmin.designationEn = "Chief Administrator";
   }
 
   // Ensure every other member has a valid level (2, 3, or 4) and strictly only one Level 1

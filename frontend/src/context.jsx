@@ -116,7 +116,7 @@ export function PortalProvider({ children }) {
     } catch {
       /* silent */
     }
-    showToast(lang === "en" ? "Logged out successfully (Returned to Level 4 Guest mode)" : "आप सफलतापूर्वक लॉगआउट हो चुके हैं (Level 4 मोड सक्रिय)");
+    showToast(lang === "en" ? "Logged out successfully" : "आप सफलतापूर्वक लॉगआउट हो चुके हैं");
   }, [persistSession, setModal, setRoute, refresh, showToast, lang]);
 
   const value = useMemo(() => ({

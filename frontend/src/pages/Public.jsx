@@ -237,21 +237,21 @@ export function MembersPage() {
           <div className="card-panel" style={{ padding: "48px 24px", borderTop: "6px solid var(--accent)", borderRadius: 16 }}>
             <div style={{ fontSize: "3.5rem", marginBottom: 16 }}>🔒</div>
             <span className="badge badge-level4" style={{ fontSize: "0.85rem", padding: "4px 12px", marginBottom: 12, display: "inline-block" }}>
-              👤 {t(lang, "वर्तमान स्तर: Level 4 (सामान्य आगंतुक)", "Current Level: Level 4 (Guest Visitor)")}
+              👤 {t(lang, "सामान्य आगंतुक विधा", "Guest Visitor Mode")}
             </span>
             <h2 style={{ color: "var(--primary)", fontSize: "1.75rem", fontWeight: 900, marginTop: 8 }}>
-              {t(lang, "सदस्य सूची (केवल Level 3+ सदस्यों हेतु आरक्षित)", "Members Directory (Reserved for Level 3+ Members)")}
+              {t(lang, "सदस्य सूची (केवल पंजीकृत सदस्यों हेतु आरक्षित)", "Members Directory (Reserved for Registered Members)")}
             </h2>
             <p style={{ color: "var(--text-muted)", fontSize: "1.05rem", lineHeight: 1.6, margin: "16px 0 28px" }}>
               {t(
                 lang,
-                "आप वर्तमान में Level 4 पर हैं। सुरक्षा एवं गोपनीयता नियमों के अनुसार संपूर्ण सदस्य सूची केवल पंजीकृत एवं सत्यापित बैंक मित्र सदस्यों (Level 3+) के लिए उपलब्ध है। सदस्य सूची देखने हेतु कृपया सदस्यता पंजीकरण करें (Level 3 बनें) अथवा अपने खाते में लॉगिन करें।",
-                "You are currently at Level 4. Per association privacy and security guidelines, the full member directory is accessible only to verified members (Level 3+). Please register for membership to become Level 3, or log in to your existing account."
+                "सुरक्षा एवं गोपनीयता नियमों के अनुसार संपूर्ण सदस्य सूची केवल पंजीकृत एवं सत्यापित बैंक मित्र सदस्यों के लिए उपलब्ध है। सदस्य सूची देखने हेतु कृपया सदस्यता पंजीकरण करें अथवा अपने खाते में लॉगिन करें।",
+                "Per association privacy and security guidelines, the full member directory is accessible only to verified members. Please register for membership or log in to your existing account."
               )}
             </p>
             <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
               <button className="btn btn-accent btn-lg" onClick={() => { setRoute("join"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-                ✍️ {t(lang, "सदस्यता पंजीकरण करें (Level 3 बनें)", "Join Membership (Become Level 3)")}
+                ✍️ {t(lang, "सदस्यता पंजीकरण करें", "Join Membership")}
               </button>
               <button className="btn btn-outline btn-lg" onClick={() => setModal({ kind: "login" })}>
                 🔑 {t(lang, "सदस्य लॉगिन करें", "Member Login")}
@@ -415,9 +415,9 @@ export function JoinPage() {
           <div className="card-panel" style={{ padding: "40px 24px", borderTop: "5px solid var(--success)", borderRadius: 16 }}>
             <div style={{ fontSize: "3rem", marginBottom: 12 }}>✅</div>
             <span className={`badge badge-level${userLevel}`} style={{ fontSize: "0.85rem", padding: "4px 12px", marginBottom: 12, display: "inline-block" }}>
-              {userLevel === 1 && "👑 Level 1 (Super Admin)"}
-              {userLevel === 2 && "⭐ Level 2 (Admin)"}
-              {userLevel === 3 && "🎖️ Level 3 (Member)"}
+              {userLevel === 1 && "👑 " + t(lang, "मुख्य प्रशासक", "Super Admin")}
+              {userLevel === 2 && "⭐ " + t(lang, "प्रशासक", "Admin")}
+              {userLevel === 3 && "🎖️ " + t(lang, "सक्रिय सदस्य", "Active Member")}
             </span>
             <h2 style={{ color: "var(--primary)", fontSize: "1.6rem", fontWeight: 900, marginTop: 8 }}>
               {t(lang, "आप पहले से ही पंजीकृत सदस्य हैं", "You Are Already a Registered Member")}
@@ -425,8 +425,8 @@ export function JoinPage() {
             <p style={{ color: "var(--text-muted)", fontSize: "1rem", lineHeight: 1.6, margin: "14px 0 24px" }}>
               {t(
                 lang,
-                "आपका सदस्यता खाता पहले से सक्रिय है। नए सदस्यता पंजीकरण की आवश्यकता केवल Level 4 (सामान्य आगंतुकों) के लिए है। आप अपना आधिकारिक पहचान पत्र एवं नियुक्ति पत्र देख सकते हैं।",
-                "Your account is already active. New membership registration is required only for Level 4 guests. You can view your digital ID card and appointment letter below."
+                "आपका सदस्यता खाता पहले से सक्रिय है। नए सदस्यता पंजीकरण की आवश्यकता केवल नए आगंतुकों के लिए है। आप अपना आधिकारिक पहचान पत्र एवं नियुक्ति पत्र देख सकते हैं।",
+                "Your account is already active. New membership registration is for new visitors only. You can view your digital ID card and appointment letter below."
               )}
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
@@ -1355,7 +1355,7 @@ export function JoinPage() {
           </div>
           <div>
             <div style={{ fontWeight: 800, fontSize: "0.92rem", color: isFormReady ? "#16a34a" : "#475569" }}>
-              {t(lang, "चरण 3: नियम स्वीकृति व Level 3 सदस्यता", "Step 3: Terms & Level 3 Membership")}
+              {t(lang, "चरण 3: नियम स्वीकृति व सदस्यता सक्रियण", "Step 3: Terms & Membership Activation")}
             </div>
             <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
               {t(lang, "तत्काल पहचान पत्र व रसीद प्राप्त करें", "Instant digital ID card & appointment letter")}
@@ -1863,7 +1863,7 @@ export function JoinPage() {
                         {t(lang, "भुगतान सफलतापूर्वक सत्यापित हो गया!", "Payment Verified Successfully!")}
                       </div>
                       <div style={{ fontSize: "0.86rem", color: "#15803d" }}>
-                        {t(lang, "आपकी सदस्यता सक्रिय कर दी गई है। आपको आपके पहचान पत्र पृष्ठ पर ले जाया जा रहा है...", "Your Level 3 membership has been activated. Redirecting to your ID Card...")}
+                        {t(lang, "आपकी सदस्यता सक्रिय कर दी गई है। आपको आपके पहचान पत्र पृष्ठ पर ले जाया जा रहा है...", "Your membership has been activated. Redirecting to your ID Card...")}
                       </div>
                     </div>
                   ) : (
@@ -2055,7 +2055,7 @@ export function JoinPage() {
                     ) : (
                       <>
                         <span>💳</span>
-                        <span>{t(lang, `₹${fee} रेज़रपे द्वारा भुगतान करें एवं Level 3 सदस्यता सक्रिय करें`, `Pay ₹${fee} via Razorpay & Activate Level 3 Membership`)}</span>
+                        <span>{t(lang, `₹${fee} रेज़रपे द्वारा भुगतान करें एवं सदस्यता सक्रिय करें`, `Pay ₹${fee} via Razorpay & Activate Membership`)}</span>
                       </>
                     )}
                   </button>
@@ -2243,7 +2243,7 @@ export function JoinPage() {
             >
               {busy
                 ? t(lang, "पंजीकरण एवं सत्यापन जारी है...", "Processing registration & verification...")
-                : `✓ ${t(lang, "UTR सत्यापन स्वीकार कर Level 3 सदस्यता पूर्ण करें", "Complete Verified Level 3 Registration")}`}
+                : `✓ ${t(lang, "UTR सत्यापन स्वीकार कर सदस्यता पूर्ण करें", "Complete Verified Registration")}`}
             </button>
           )}
         </form>
@@ -2771,20 +2771,6 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
-  // Demo account presets
-  const demoAccounts = [
-    { id: "superadmin", level: "Level 1 (Super Admin)", icon: "👑", user: "admin", pass: "admin123" },
-    { id: "admin", level: "Level 2 (Admin)", icon: "⭐", user: "UPBMS-CORE-002", pass: "123456" },
-    { id: "member", level: "Level 3 (Member)", icon: "🎖️", user: "UPBMS-CORE-001", pass: "123456" },
-  ];
-
-  function handlePreset(acc) {
-    setQuery(acc.user);
-    setPassword(acc.pass);
-    setActivePreset(acc.id);
-    setAuthError("");
-  }
-
   // ── Handle Password Login ──
   async function handlePasswordLogin(e) {
     e.preventDefault();
@@ -2817,7 +2803,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
       persistSession(next);
       await refresh(next);
       setModal(null);
-      showToast(t(lang, `लॉगिन सफल! (Level ${next.level})`, `Login successful! (Level ${next.level})`));
+      showToast(t(lang, "लॉगिन सफल!", "Login successful!"));
       if (next.isAdmin) {
         setRoute("admin");
       } else {
@@ -2971,37 +2957,6 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
           ───────────────────────────────────────────────────────────── */}
       {mode === "login" && (
         <form onSubmit={handlePasswordLogin} className="login-form-container">
-          {/* Quick Click Demo Accounts Bar */}
-          <div className="demo-accounts-card">
-            <div className="demo-accounts-top">
-              <div className="demo-accounts-title">
-                <span>💡</span>
-                <span>{t(lang, "डेमो खाते (Click to auto-fill):", "Demo Accounts (Click to auto-fill):")}</span>
-              </div>
-            </div>
-            <div className="demo-items-grid">
-              {demoAccounts.map((acc) => {
-                const isSelected = activePreset === acc.id || (query === acc.user && password === acc.pass);
-                return (
-                  <button
-                    key={acc.id}
-                    type="button"
-                    onClick={() => handlePreset(acc)}
-                    className={`demo-account-chip ${isSelected ? "active" : ""}`}
-                  >
-                    <div className="demo-account-left">
-                      <span className="demo-account-icon">{acc.icon}</span>
-                      <span className="demo-account-name"><b>{acc.level}:</b></span>
-                    </div>
-                    <div className="demo-account-creds">
-                      <code>{acc.user}</code> / <code>{acc.pass}</code>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Member ID / Email Input */}
           <div className="login-field-group">
             <label className="login-field-label">
@@ -3058,7 +3013,7 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
                 type={showPass ? "text" : "password"}
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setActivePreset(null); setAuthError(""); }}
-                placeholder="e.g. 123456 or admin123"
+                placeholder="e.g. ••••••••"
                 style={{ paddingRight: "44px" }}
                 required
               />
@@ -3599,7 +3554,7 @@ export function Modals() {
     : modal.kind === "receipt"
     ? `🧾 ${t(lang, "शुल्क रसीद", "Payment Receipt")}`
     : modal.kind === "memberMenu"
-    ? `👤 ${t(lang, "सदस्य प्रोफ़ाइल एवं स्तर", "Member Profile & Access Level")}`
+    ? `👤 ${t(lang, "सदस्य प्रोफ़ाइल", "Member Profile")}`
     : "UPBMS";
 
   if (modal.kind === "memberMenu") {
@@ -3614,177 +3569,159 @@ export function Modals() {
     const latestReceipt = memberReceipts[0] || null;
 
     body = (
-      <div style={{ padding: "20px 24px", maxWidth: 650, margin: "0 auto" }}>
-        {/* Profile Card Header */}
-        <div style={{
-          display: "flex",
-          gap: 16,
-          alignItems: "center",
-          background: "linear-gradient(135deg, #051331 0%, #0a2558 100%)",
-          padding: "18px 20px",
-          borderRadius: 14,
-          color: "#ffffff",
-          marginBottom: 18,
-          boxShadow: "0 8px 20px rgba(5, 19, 49, 0.25)"
-        }}>
-          {m.photoUrl ? (
-            <img
-              src={m.photoUrl}
-              alt={m.nameHi || m.nameEn}
-              style={{ width: 68, height: 86, objectFit: "cover", borderRadius: 10, border: "2.5px solid #ffd166", flexShrink: 0 }}
-            />
-          ) : (
-            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "#ffd166", color: "#051331", display: "grid", placeItems: "center", fontSize: "1.8rem", fontWeight: 900, flexShrink: 0 }}>
-              {m.nameHi?.charAt(0) || m.nameEn?.charAt(0) || "👤"}
-            </div>
-          )}
+      <div className="profile-modal-container">
+        {/* Profile Hero Header Card */}
+        <div className="profile-hero-card">
+          <div className="profile-avatar-wrap">
+            {m.photoUrl ? (
+              <img
+                src={m.photoUrl}
+                alt={m.nameHi || m.nameEn}
+                className="profile-avatar-img"
+              />
+            ) : (
+              <div className="profile-avatar-fallback">
+                {m.nameHi?.charAt(0) || m.nameEn?.charAt(0) || "👤"}
+              </div>
+            )}
+          </div>
 
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-              <span className={`badge badge-level${userLvl}`} style={{ fontSize: "0.8rem", padding: "3px 10px" }}>
-                {userLvl === 1 && "👑 Level 1 (Super Admin)"}
-                {userLvl === 2 && "⭐ Level 2 (Admin)"}
-                {userLvl === 3 && "🎖️ Level 3 (Member)"}
-                {userLvl === 4 && "👤 Level 4 (Guest)"}
+          <div className="profile-hero-info">
+            <div className="profile-hero-badges">
+              <span className={`badge badge-level${userLvl}`} style={{ fontSize: "0.78rem", padding: "3px 10px" }}>
+                {userLvl === 1 && "👑 " + t(lang, "मुख्य प्रशासक", "Super Admin")}
+                {userLvl === 2 && "⭐ " + t(lang, "प्रशासक", "Admin")}
+                {userLvl === 3 && "🎖️ " + t(lang, "सक्रिय सदस्य", "Active Member")}
+                {userLvl === 4 && "👤 " + t(lang, "आगंतुक", "Guest Visitor")}
               </span>
               <span style={{
                 background: m.status === "active" ? "#16a34a" : "#ca8a04",
                 color: "#ffffff",
-                padding: "2px 8px",
+                padding: "3px 9px",
                 borderRadius: 12,
                 fontSize: "0.74rem",
                 fontWeight: 800
               }}>
-                {m.status === "active" ? "✓ सक्रिय (Active)" : "⏳ लंबित (Pending)"}
+                {m.status === "active" ? "✓ " + t(lang, "सक्रिय", "Active") : "⏳ " + t(lang, "लंबित", "Pending")}
               </span>
             </div>
 
-            <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#ffffff", lineHeight: 1.2 }}>
+            <div className="profile-hero-name-hi">
               {t(lang, m.nameHi, m.nameEn)}
             </div>
             {m.nameEn && m.nameHi && (
-              <div style={{ fontSize: "0.88rem", color: "#ffd166", fontWeight: 700, marginTop: 2 }}>
+              <div className="profile-hero-name-en">
                 {m.nameEn}
               </div>
             )}
-            <div style={{ fontSize: "0.84rem", color: "#93c5fd", fontWeight: 700, marginTop: 4 }}>
-              {t(lang, m.designationHi, m.designationEn) || (m.isCoreMember ? "प्रदेश पदाधिकारी" : "सक्रिय बैंक मित्र")} • <code>{m.memberCode || "—"}</code>
+            <div className="profile-hero-sub">
+              <span>{t(lang, m.designationHi, m.designationEn) || (m.isCoreMember ? t(lang, "प्रदेश पदाधिकारी", "State Executive") : t(lang, "सक्रिय बैंक मित्र", "Active Bank Mitra"))}</span>
+              <span>•</span>
+              <span className="profile-member-code-badge">{m.memberCode || "UPBMS-MEMBER"}</span>
             </div>
           </div>
-        </div>
-
-        {/* Access Level Summary Box */}
-        <div style={{ background: "#f8fafc", padding: "12px 16px", borderRadius: 10, border: "1px solid #e2e8f0", marginBottom: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-            <span style={{ fontWeight: 800, fontSize: "0.86rem", color: "var(--primary)" }}>
-              🔑 {t(lang, "अधिकार स्तर विवरण", "Access Level Privileges")}
-            </span>
-            <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 700 }}>
-              Level {userLvl}
-            </span>
-          </div>
-          <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569", lineHeight: 1.45 }}>
-            {userLvl === 1 && t(lang, "सुपर एडमिन (1 खाता केवल): संपूर्ण नियंत्रण, वेबसाइट + सदस्य सूची + एडमिन पैनल + उपयोगकर्ता प्रबंधन।", "Super Admin (1 account only): Full system access, User Management & all settings.")}
-            {userLvl === 2 && t(lang, "प्रशासक: संपूर्ण वेबसाइट + सदस्य सूची + एडमिन पैनल संपादन (User Management को छोड़कर)।", "Sub-Admin: Website, Members Directory & Admin Panel editing (except User Management).")}
-            {userLvl === 3 && t(lang, "सत्यापित सक्रिय सदस्य: संपूर्ण वेबसाइट + 75 जनपद सदस्य सूची + डिजिटल पहचान पत्र, नियुक्ति पत्र व शुल्क रसीद।", "Verified Active Member: Website, 75 Districts Directory, Digital ID Card, Appointment Letter & Receipt.")}
-            {userLvl === 4 && t(lang, "सामान्य आगंतुक: सार्वजनिक वेबसाइट।", "Guest Visitor: Public website.")}
-          </p>
         </div>
 
         {/* Section 1: Personal & Contact Information */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="profile-section-card">
+          <div className="profile-section-header">
             <span>👤</span>
             <span>{t(lang, "व्यक्तिगत एवं संपर्क विवरण", "Personal & Contact Details")}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "पिता का नाम:", "Father's Name:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{t(lang, m.fatherName, m.fatherNameEn) || "—"}</span>
+          <div className="profile-fields-grid">
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "पिता का नाम", "Father's Name")}</span>
+              <span className="profile-field-value">{t(lang, m.fatherName, m.fatherNameEn) || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "मोबाइल नंबर (WhatsApp):", "Mobile (WhatsApp):")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}><b>{m.mobile || "—"}</b></span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "मोबाइल नंबर (WhatsApp)", "Mobile (WhatsApp)")}</span>
+              <span className="profile-field-value">{m.mobile || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "ईमेल पता:", "Email Address:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800, wordBreak: "break-all" }}>
-                {m.email || "—"} {m.isEmailVerified && <span style={{ color: "#16a34a", fontSize: "0.78rem", fontWeight: 800 }}>✓ {t(lang, "सत्यापित", "Verified")}</span>}
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "ईमेल पता", "Email Address")}</span>
+              <span className="profile-field-value">
+                {m.email || "—"}{" "}
+                {m.isEmailVerified && (
+                  <span style={{ color: "#16a34a", fontSize: "0.76rem", fontWeight: 800, marginLeft: 4 }}>
+                    ✓ {t(lang, "सत्यापित", "Verified")}
+                  </span>
+                )}
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "रक्त समूह (Blood Group):", "Blood Group:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.bloodGroup || "—"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "रक्त समूह", "Blood Group")}</span>
+              <span className="profile-field-value">{m.bloodGroup || "—"}</span>
             </div>
           </div>
         </div>
 
-        {/* Section 2: Banking & CSP Operation */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        {/* Section 2: Banking & CSP Operations */}
+        <div className="profile-section-card">
+          <div className="profile-section-header">
             <span>🏦</span>
             <span>{t(lang, "बैंकिंग एवं सीएसपी संचालन विवरण", "Banking & CSP Operation Details")}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "संबंधित बैंक:", "Associated Bank:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}><b>{m.bankName || "—"}</b></span>
+          <div className="profile-fields-grid">
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "संबंधित बैंक", "Associated Bank")}</span>
+              <span className="profile-field-value">{m.bankName || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "कॉर्पोरेट बीसी कंपनी:", "Corporate BC Company:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.bcCompany || "—"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "कॉर्पोरेट बीसी कंपनी", "Corporate BC Company")}</span>
+              <span className="profile-field-value">{m.bcCompany || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "केओ / सीएसपी कोड:", "KO / CSP Code:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}><code>{m.koCode || "—"}</code></span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "केओ / सीएसपी कोड", "KO / CSP Code")}</span>
+              <span className="profile-field-value"><code>{m.koCode || "—"}</code></span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "जनपद (District):", "District:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{localizeDual(m.district, lang) || "—"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "जनपद (District)", "District")}</span>
+              <span className="profile-field-value">{localizeDual(m.district, lang) || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "ब्लॉक / केंद्र:", "Block / Center:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{t(lang, m.block, m.blockEn) || "—"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "ब्लॉक / केंद्र", "Block / Center")}</span>
+              <span className="profile-field-value">{t(lang, m.block, m.blockEn) || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सदस्यता श्रेणी:", "Member Category:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.memberCategory || "General Member"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "सदस्यता श्रेणी", "Member Category")}</span>
+              <span className="profile-field-value">{m.memberCategory || "General Member"}</span>
             </div>
           </div>
         </div>
 
         {/* Section 3: Membership Status & Payment */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "var(--primary)", borderBottom: "1.5px solid #e2e8f0", paddingBottom: 6, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="profile-section-card">
+          <div className="profile-section-header">
             <span>📜</span>
             <span>{t(lang, "सदस्यता पंजीकरण एवं शुल्क विवरण", "Membership & Fee Record")}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "8px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सदस्यता प्रारंभ दिनांक:", "Joined Date:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.joinedDate || "—"}</span>
+          <div className="profile-fields-grid">
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "सदस्यता प्रारंभ दिनांक", "Joined Date")}</span>
+              <span className="profile-field-value">{m.joinedDate || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "मान्यता समाप्ति दिनांक:", "Valid Until:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}>{m.validUntil || "—"}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "मान्यता समाप्ति दिनांक", "Valid Until")}</span>
+              <span className="profile-field-value">{m.validUntil || "—"}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "जमा वार्षिक सदस्यता शुल्क:", "Annual Fee Paid:")}</span>
-              <span style={{ color: "#15803d", fontWeight: 800 }}>₹{m.feePaid || 251}</span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "जमा वार्षिक सदस्यता शुल्क", "Annual Fee Paid")}</span>
+              <span className="profile-field-value" style={{ color: "#15803d" }}>₹{m.feePaid || 251}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px dashed #f1f5f9", fontSize: "0.85rem" }}>
-              <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "शुल्क रसीद संख्या:", "Receipt No:")}</span>
-              <span style={{ color: "var(--text)", fontWeight: 800 }}><code>{latestReceipt?.receiptNo || "UPBMS-RCP-2026"}</code></span>
+            <div className="profile-field-item">
+              <span className="profile-field-label">{t(lang, "शुल्क रसीद संख्या", "Receipt No")}</span>
+              <span className="profile-field-value"><code>{latestReceipt?.receiptNo || "UPBMS-RCP-2026"}</code></span>
             </div>
           </div>
         </div>
 
         {/* Action Buttons Toolbar */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", paddingTop: 14, borderTop: "1.5px solid #e2e8f0" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="profile-actions-bar">
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               className="btn btn-primary btn-sm"
               onClick={() => { setRoute("idcard"); setModal(null); }}
+              style={{ fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 6 }}
             >
               🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र", "View ID Card & Letter")}
             </button>
@@ -3792,13 +3729,18 @@ export function Modals() {
               <button
                 className="btn btn-accent btn-sm"
                 onClick={() => { setRoute("admin"); setModal(null); }}
+                style={{ fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 6 }}
               >
                 ⚙️ {t(lang, "एडमिन पैनल", "Admin Panel")}
               </button>
             )}
           </div>
-          <button className="btn btn-danger btn-sm" onClick={logout}>
-            🔒 {t(lang, "लॉगआउट करें (Level 4)", "Logout (Level 4)")}
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={logout}
+            style={{ fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            🔒 {t(lang, "लॉगआउट करें", "Sign Out")}
           </button>
         </div>
       </div>
