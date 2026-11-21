@@ -7,7 +7,6 @@ const TABS = [
   ["dashboard", "📊 डैशबोर्ड", "📊 Dashboard"],
   ["users", "👥 उपयोगकर्ता प्रबंधन", "👥 User Management"],
   ["gatewaysettings", "💳 गेटवे व भुगतान विकल्प", "💳 Gateway & Payment Options"],
-  ["loginsettings", "🔐 लॉगिन सिस्टम विकल्प", "🔐 Login System Options"],
   ["signs", "✍️ हस्ताक्षर एवं मुहर", "✍️ Signature & Seal"],
   ["menus", "🧭 मेनू व सेक्शन", "🧭 Menus & Sections"],
   ["about", "🏛️ परिचय व प्रमाण-पत्र", "🏛️ About & Certificates"],
@@ -169,8 +168,8 @@ export function AdminPage() {
 
   const saveSettings = (patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg);
 
-  // Filter tabs: Level 2 admins cannot see or access User Management, Gateways, or Login System Settings!
-  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "loginsettings" && id !== "gatewaysettings") || isSuperAdmin);
+  // Filter tabs: Level 2 admins cannot see or access User Management or Gateways!
+  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "gatewaysettings") || isSuperAdmin);
 
   return (
     <div className="container" style={{ padding: "18px 0 40px" }}>
@@ -214,16 +213,6 @@ export function AdminPage() {
               </div>
             )
           )}
-          {tab === "loginsettings" && (
-            isSuperAdmin ? (
-              <LoginSettingsTab state={state} saveSettings={saveSettings} lang={lang} setRoute={setRoute} />
-            ) : (
-              <div className="card-panel">
-                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
-                <p>{t(lang, "लॉगिन सिस्टम सेटिंग्स केवल Level 1 (सुपर एडमिन) के लिए आरक्षित है।", "Login system options are strictly restricted to Level 1 Super Admin.")}</p>
-              </div>
-            )
-          )}
           {(tab === "signs" || tab === "logs") && <Signs state={state} saveSettings={saveSettings} session={session} showToast={showToast} run={run} />}
           {tab === "menus" && <Menus state={state} saveSettings={saveSettings} />}
           {tab === "about" && <About state={state} saveSettings={saveSettings} run={run} session={session} showToast={showToast} />}
@@ -258,163 +247,6 @@ async function download(path, filename, session) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-export function LoginSettingsTab({ state, saveSettings, lang, setRoute, isEmbedded = false }) {
-  const current = state?.settings?.loginMethod || "both";
-  const [selected, setSelected] = useState(current);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (state?.settings?.loginMethod) {
-      setSelected(state.settings.loginMethod);
-    }
-  }, [state?.settings?.loginMethod]);
-
-  const options = [
-    {
-      id: "both",
-      icon: "🔄",
-      badge: t(lang, "अनुशंसित (Recommended)", "Recommended"),
-      badgeClass: "recommended",
-      title: t(lang, "दोनों विकल्प दिखाएं (Both OTP & Password)", "Show Both (OTP & Password)"),
-      desc: t(
-        lang,
-        "सार्वजनिक पोर्टल के लॉगिन मॉडल में 'ईमेल OTP लॉगिन' और 'पासवर्ड / एडमिन' दोनों टैब प्रदर्शित होंगे। उपयोगकर्ता अपनी पसंद से किसी भी तरीके से लॉगिन कर सकते हैं।",
-        "Both 'Email OTP Login' and 'Password / Admin' tabs will be displayed. Users can choose either method freely."
-      )
-    },
-    {
-      id: "otp",
-      icon: "📧",
-      badge: t(lang, "पासवर्ड-मुक्त (Passwordless)", "Passwordless"),
-      badgeClass: "otp",
-      title: t(lang, "केवल ईमेल OTP लॉगिन (Email OTP Only)", "Email OTP Login Only"),
-      desc: t(
-        lang,
-        "सार्वजनिक पोर्टल पर केवल 6-अंकीय ईमेल OTP सत्यापन स्क्रीन दिखाई देगी। पासवर्ड टैब पूर्णतः छिपा रहेगा। नए उपयोगकर्ताओं का स्वतः पंजीकरण होगा।",
-        "Passwords are completely disabled for the public. Only 6-digit Email OTP login is shown. Password tab is hidden."
-      )
-    },
-    {
-      id: "password",
-      icon: "🔑",
-      badge: t(lang, "पारंपरिक (Classic)", "Classic"),
-      badgeClass: "pass",
-      title: t(lang, "केवल पासवर्ड लॉगिन (Password Only)", "Password Login Only"),
-      desc: t(
-        lang,
-        "पारंपरिक सदस्य आईडी / यूज़रनेम एवं पासवर्ड आधारित लॉगिन स्क्रीन दिखाई देगी। ईमेल OTP विकल्प छिपा रहेगा।",
-        "Classic Member ID/Username & Password login form is shown. Email OTP tab is hidden."
-      )
-    }
-  ];
-
-  async function handleSave() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      await saveSettings(
-        { loginMethod: selected },
-        t(lang, "लॉगिन सिस्टम विज़िबिलिटी विकल्प सफलतापूर्वक सहेजे गए!", "Login system options saved successfully!")
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="card-panel" style={{ padding: isEmbedded ? "22px 20px" : "28px 24px", borderRadius: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-        <div>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800, marginBottom: 8 }}>
-            👑 {t(lang, "केवल Level 1 (सुपर एडमिन) नियंत्रण", "Level 1 Super Admin Exclusive")}
-          </div>
-          <h2 style={{ color: "var(--primary)", fontSize: "1.35rem", fontWeight: 900, margin: "0 0 6px 0" }}>
-            🔐 {t(lang, "सार्वजनिक लॉगिन सिस्टम विकल्प (Login System Options)", "Public Login System Options")}
-          </h2>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: 0, maxWidth: 700 }}>
-            {t(
-              lang,
-              "निर्धारित करें कि मुख्य वेबसाइट पर 'लॉगिन' बटन दबाने पर उपयोगकर्ताओं को कौन-सा लॉगिन विकल्प प्रस्तुत किया जाएगा:",
-              "Configure which authentication sections appear in the public login modal for visitors and members:"
-            )}
-          </p>
-        </div>
-
-        <button
-          className="btn btn-primary btn-md"
-          onClick={handleSave}
-          disabled={saving || selected === current}
-          style={{ minWidth: 150, fontWeight: 800 }}
-        >
-          {saving ? "⏳ सहेजा जा रहा है..." : (selected === current ? "✅ सक्रिय (Active)" : "💾 सेटिंग्स सहेजें")}
-        </button>
-      </div>
-
-      {/* Interactive Option Cards */}
-      <div className="login-settings-grid">
-        {options.map((opt) => {
-          const isSelected = selected === opt.id;
-          return (
-            <div
-              key={opt.id}
-              className={`login-setting-card ${isSelected ? "active" : ""}`}
-              onClick={() => setSelected(opt.id)}
-            >
-              <div>
-                <span className={`login-setting-badge ${opt.badgeClass}`}>{opt.badge}</span>
-                <div className="login-setting-icon">{opt.icon}</div>
-                <h3 className="login-setting-title">{opt.title}</h3>
-                <p className="login-setting-desc">{opt.desc}</p>
-              </div>
-
-              <div className="login-setting-radio">
-                <input
-                  type="radio"
-                  name={`loginMethodGroup_${isEmbedded ? "embed" : "tab"}`}
-                  value={opt.id}
-                  checked={isSelected}
-                  onChange={() => setSelected(opt.id)}
-                  style={{ cursor: "pointer", width: 18, height: 18 }}
-                />
-                <span>{isSelected ? t(lang, "सक्रिय चयन (Selected)", "Selected") : t(lang, "चुनने हेतु क्लिक करें", "Click to Select")}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Live Status Summary */}
-      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 18px", marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
-            {t(lang, "वर्तमान सक्रिय विधा:", "Currently Active Setting:")}{" "}
-          </span>
-          <b style={{ color: "#0f172a", fontSize: "0.95rem" }}>
-            {current === "both" && "🔄 " + t(lang, "दोनों (Email OTP + Password)", "Both (Email OTP + Password)")}
-            {current === "otp" && "📧 " + t(lang, "केवल Email OTP लॉगिन", "Email OTP Only")}
-            {current === "password" && "🔑 " + t(lang, "केवल पासवर्ड लॉगिन", "Password Only")}
-          </b>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: "0.82rem", color: "#64748b" }}>
-            📧 {t(lang, "आधिकारिक प्रेषक:", "Sender:")} <code style={{ color: "#2563eb" }}>upbmsofficial@gmail.com</code>
-          </span>
-          {setRoute && (
-            <button
-              type="button"
-              className="btn btn-outline btn-xs"
-              style={{ marginLeft: 6 }}
-              onClick={() => setRoute("home")}
-            >
-              🌐 {t(lang, "होमपेज पर देखें", "View on Site")}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 export function GatewaySettingsTab({ state, saveSettings, lang, setRoute }) {
@@ -847,6 +679,28 @@ function UsersManagement({ portal, run }) {
     }
   };
 
+  const deleteUser = async (u) => {
+    if (u.level === 1) {
+      showToast(t(lang, "सुपर एडमिन खाता हटाया नहीं जा सकता!", "Super Admin account cannot be deleted!"));
+      return;
+    }
+    const displayName = t(lang, u.nameHi, u.nameEn) || u.username || u.memberCode;
+    const confirmPrompt = t(
+      lang,
+      `क्या आप वाकई उपयोगकर्ता '${displayName}' (${u.memberCode || u.mobile}) को हटाना चाहते हैं? यह क्रिया वापस नहीं ली जा सकती।`,
+      `Are you sure you want to permanently delete user '${displayName}' (${u.memberCode || u.mobile})? This action cannot be undone.`
+    );
+    if (!window.confirm(confirmPrompt)) return;
+    try {
+      await api(`/api/members/${u.id}`, { method: "DELETE", session });
+      showToast(t(lang, "उपयोगकर्ता सफलतापूर्वक हटा दिया गया।", "User deleted successfully."));
+      await loadUsers();
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    }
+  };
+
   const handleL1Submit = async (e) => {
     e.preventDefault();
     try {
@@ -868,8 +722,7 @@ function UsersManagement({ portal, run }) {
   const levelCounts = {
     1: users.filter((u) => u.level === 1).length,
     2: users.filter((u) => u.level === 2).length,
-    3: users.filter((u) => u.level === 3).length,
-    4: users.filter((u) => u.level === 4).length
+    3: users.filter((u) => u.level === 3).length
   };
 
   const filteredUsers = users.filter((u) => {
@@ -908,17 +761,8 @@ function UsersManagement({ portal, run }) {
         </div>
       </div>
 
-      {/* 1.5. Level 1 Exclusive: Public Login System Visibility Setting */}
-      <LoginSettingsTab
-        state={state}
-        saveSettings={(patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg)}
-        lang={lang}
-        setRoute={portal.setRoute}
-        isEmbedded={true}
-      />
-
-      {/* 2. 4 Levels Summary Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
+      {/* 2. 3 Levels Summary Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
         {/* Level 1 Card */}
         <div className="card-panel" style={{ borderTop: "4px solid #f59e0b", padding: "16px 18px", background: "#fffdf5" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -958,20 +802,6 @@ function UsersManagement({ portal, run }) {
           </div>
           <p style={{ fontSize: "0.82rem", color: "#064e3b", margin: "6px 0 0", lineHeight: 1.4 }}>
             {t(lang, "सार्वजनिक वेबसाइट + सदस्य सूची (Members Page) + डिजिटल पहचान पत्र एवं नियुक्ति पत्र।", "Full website + Members Directory + Digital ID Card & Appointment Letter.")}
-          </p>
-        </div>
-
-        {/* Level 4 Card */}
-        <div className="card-panel" style={{ borderTop: "4px solid #64748b", padding: "16px 18px", background: "#f8fafc" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level4">👤 LEVEL 4</span>
-            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#475569" }}>{levelCounts[4]}</span>
-          </div>
-          <div style={{ fontWeight: 800, color: "#334155", fontSize: "0.95rem" }}>
-            {t(lang, "सामान्य आगंतुक / गेस्ट", "Guest / Visitor")}
-          </div>
-          <p style={{ fontSize: "0.82rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.4 }}>
-            {t(lang, "सार्वजनिक वेबसाइट एवं सदस्य सूची। एडमिन पूर्ण वर्जित। सदस्यता लेकर Level 3 बन सकते हैं।", "Public website and Member Directory. No Admin access. Can join to become Level 3.")}
           </p>
         </div>
       </div>
@@ -1046,7 +876,7 @@ function UsersManagement({ portal, run }) {
           </h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-muted)" }}>{t(lang, "फ़िल्टर:", "Filter:")}</span>
-            {["all", "1", "2", "3", "4"].map((lvl) => (
+            {["all", "1", "2", "3"].map((lvl) => (
               <button
                 key={lvl}
                 type="button"
@@ -1109,7 +939,6 @@ function UsersManagement({ portal, run }) {
                           {u.level === 1 && "👑 Level 1"}
                           {u.level === 2 && "⭐ Level 2"}
                           {u.level === 3 && "🎖️ Level 3"}
-                          {u.level === 4 && "👤 Level 4"}
                         </span>
                       </td>
                       <td>
@@ -1128,7 +957,6 @@ function UsersManagement({ portal, run }) {
                             >
                               <option value={2}>⭐ Level 2 (Admin)</option>
                               <option value={3}>🎖️ Level 3 (Member)</option>
-                              <option value={4}>👤 Level 4 (Guest)</option>
                             </select>
                             {updatingId === u.id && <span style={{ fontSize: "0.75rem", color: "var(--accent)" }}>⏳</span>}
                           </div>
@@ -1140,24 +968,36 @@ function UsersManagement({ portal, run }) {
                         </span>
                       </td>
                       <td>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          style={{ fontSize: "0.78rem", padding: "4px 8px" }}
-                          onClick={async () => {
-                            const newPwd = prompt(t(lang, `${u.nameHi} का नया पासवर्ड दर्ज करें (न्यूनतम 4 अक्षर):`, `Enter new password for ${u.nameEn} (min 4 chars):`), "123456");
-                            if (newPwd && newPwd.trim().length >= 4) {
-                              try {
-                                await api(`/api/members/${u.id}/reset-password`, { method: "POST", session, body: { newPassword: newPwd.trim() } });
-                                showToast(t(lang, "पासवर्ड रीसेट सफल!", "Password reset successfully!"));
-                              } catch (err) {
-                                showToast(err.message);
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            style={{ fontSize: "0.78rem", padding: "4px 8px" }}
+                            onClick={async () => {
+                              const newPwd = prompt(t(lang, `${u.nameHi} का नया पासवर्ड दर्ज करें (न्यूनतम 4 अक्षर):`, `Enter new password for ${u.nameEn} (min 4 chars):`), "123456");
+                              if (newPwd && newPwd.trim().length >= 4) {
+                                try {
+                                  await api(`/api/members/${u.id}/reset-password`, { method: "POST", session, body: { newPassword: newPwd.trim() } });
+                                  showToast(t(lang, "पासवर्ड रीसेट सफल!", "Password reset successfully!"));
+                                } catch (err) {
+                                  showToast(err.message);
+                                }
                               }
-                            }
-                          }}
-                        >
-                          🔑 {t(lang, "पासवर्ड", "Password")}
-                        </button>
+                            }}
+                          >
+                            🔑 {t(lang, "पासवर्ड", "Password")}
+                          </button>
+                          {!isL1 && (
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              style={{ fontSize: "0.78rem", padding: "4px 8px" }}
+                              onClick={() => deleteUser(u)}
+                            >
+                              🗑️ {t(lang, "हटाएं", "Delete")}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -3413,7 +3253,7 @@ function Hero({ state, saveSettings, run, session, showToast }) {
                   {imageUrl && <span style={{ color: "#16a34a", fontWeight: 800, fontSize: "0.85rem" }}>✓ {t(lang, "इमेज संलग्न (ऑप्टिमाइज़्ड)", "Image Attached (Optimized)")}</span>}
                 </div>
                 <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 6 }}>
-                  ⚡ {t(lang, "क्लाउडिनरी ऑटो-कंप्रेशन सक्रिय: बड़ी फोटो स्वतः कंप्रेस होकर मोबाइल व वेब पर तेजी से लोड होगी।", "Cloudinary Auto-Compression Active: High-res images are automatically compressed to load fast on mobile & web.")}
+                  ⚡ {t(lang, "हीरो सेक्शन ऑटो-कंप्रेशन सक्रिय: इमेज 16:9 अनुपात (1600x900) के अनुसार स्वतः कंप्रेस होकर मोबाइल व वेब पर तत्काल लोड होगी।", "Hero Section Auto-Compression Active: Images are automatically compressed to exact 16:9 hero proportions (1600x900) for instant loading on mobile & web.")}
                 </div>
                 {imageUrl && (
                   <div style={{ marginTop: 10, maxWidth: 360, borderRadius: 10, overflow: "hidden", border: "1.5px solid #cbd5e1" }}>
@@ -3624,71 +3464,47 @@ function Hero({ state, saveSettings, run, session, showToast }) {
 }
 
 function Members({ portal, run }) {
-  const { state, session, setModal, showToast, lang } = portal;
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [edit, setEdit] = useState(null);
-  const rows = state.members.filter((m) => {
-    if (filter === "core" && !m.isCoreMember) return false;
-    if (filter === "general" && m.isCoreMember) return false;
-    if (filter === "pending" && m.status !== "pending") return false;
-    if (q && !`${m.nameHi} ${m.nameEn} ${m.memberCode} ${m.mobile} ${m.district} ${m.koCode}`.toLowerCase().includes(q.toLowerCase())) return false;
-    return true;
-  });
+  const { state, lang } = portal;
+
   async function saveMeta(e) {
     e.preventDefault();
     const r = Object.fromEntries(new FormData(e.target).entries());
-    await run("/api/meta", { method: "PUT", body: { districts: lines(r.districts), banks: lines(r.banks), bcCompanies: lines(r.bcCompanies) } }, "मास्टर सूची सेव");
+    await run(
+      "/api/meta",
+      { method: "PUT", body: { districts: lines(r.districts), banks: lines(r.banks), bcCompanies: lines(r.bcCompanies) } },
+      t(lang, "मास्टर सूची सफलतापूर्वक सेव हो गई", "Master lists saved successfully")
+    );
   }
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="card-panel">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <h3 style={{ color: "var(--primary)" }}>👥 {t(lang, "सदस्य प्रबंधन", "Member Management")}</h3>
-          <button className="btn btn-accent btn-sm" onClick={() => setEdit({})}>➕ {t(lang, "नया सदस्य", "New Member")}</button>
-        </div>
-        <div className="filter-bar">
-          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="खोजें" />
-          <select className="form-control" value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="all">सभी ({state.members.length})</option>
-            <option value="core">मुख्य कार्यकारिणी</option>
-            <option value="general">सामान्य</option>
-            <option value="pending">लंबित</option>
-          </select>
-        </div>
-        <div className="admin-table-wrap">
-          <table className="data-table">
-            <thead><tr><th>{t(lang, "आईडी", "ID")}</th><th>{t(lang, "नाम", "Name")}</th><th>{t(lang, "जनपद", "District")}</th><th>{t(lang, "मोबाइल", "Mobile")}</th><th>{t(lang, "स्थिति", "Status")}</th><th>{t(lang, "कार्य", "Actions")}</th></tr></thead>
-            <tbody>
-              {rows.map((m) => (
-                <tr key={m.id}>
-                  <td><b>{m.memberCode}</b><br />{m.isCoreMember ? "CORE" : "सामान्य"}</td>
-                  <td>{m.nameHi}<br />{m.designationHi}</td>
-                  <td>{m.district}<br />{m.bankName}</td>
-                  <td>{m.mobile}</td>
-                  <td><span className={`badge badge-${m.status === "active" ? "active" : "pending"}`}>{m.status}</span></td>
-                  <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {m.status !== "active" && <button className="btn btn-whatsapp btn-sm" onClick={() => run(`/api/members/${m.id}`, { method: "PUT", body: { status: "active" } }, "स्वीकृत")}>स्वीकृत</button>}
-                    <button className="btn btn-primary btn-sm" onClick={() => setEdit(m)}>संशोधित</button>
-                    <button className="btn btn-outline btn-sm" onClick={() => { const p = prompt("नया पासवर्ड", "UPBMS@123"); if (p) run(`/api/members/${m.id}/reset-password`, { method: "POST", body: { newPassword: p } }, "पासवर्ड बदला"); }}>पासवर्ड</button>
-                    <button className="btn btn-outline btn-sm" onClick={() => showToast(`${m.memberCode} का पत्र सदस्य लॉगिन के बाद खुलता है`)}>ID</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => { if (confirm("सदस्य हटाएँ?")) run(`/api/members/${m.id}`, { method: "DELETE" }, "हटाया"); }}>हटाएँ</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {edit && <MemberForm member={edit.id ? edit : null} state={state} session={session} run={run} onClose={() => setEdit(null)} showToast={showToast} />}
-      <form className="card-panel" onSubmit={saveMeta}>
-        <h3 style={{ color: "var(--primary)" }}>जनपद, बैंक और बीसी कंपनी</h3>
+      <form className="card-panel" onSubmit={saveMeta} style={{ borderRadius: 16, padding: "26px 28px" }}>
+        <h3 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1.18rem", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+          🏛️ {t(lang, "मास्टर सूचियाँ: जनपद, बैंक और बीसी कंपनी", "Master Lists: Districts, Banks & BC Companies")}
+        </h3>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: "0 0 18px", lineHeight: 1.5 }}>
+          {t(
+            lang,
+            "सदस्य पंजीकरण एवं प्रोफाइल में प्रयुक्त होने वाली अधिकृत जनपद, बैंक एवं बीसी कंपनी की सूची। प्रत्येक प्रविष्टि नई पंक्ति में दर्ज करें।",
+            "Authorized lists of Districts, Banks, and BC Companies used across member registrations and profiles. Enter one per line."
+          )}
+        </p>
         <div className="form-grid">
-          <Field label={`बैंक (${state.meta.banks.length})`}><Area name="banks" defaultValue={state.meta.banks.join("\n")} /></Field>
-          <Field label={`बीसी (${state.meta.bcCompanies.length})`}><Area name="bcCompanies" defaultValue={state.meta.bcCompanies.join("\n")} /></Field>
-          <Field label={`जनपद (${state.meta.districts.length})`}><Area name="districts" defaultValue={state.meta.districts.join("\n")} /></Field>
+          <Field label={t(lang, `बैंक (${state.meta?.banks?.length || 0})`, `Banks (${state.meta?.banks?.length || 0})`)}>
+            <Area name="banks" defaultValue={(state.meta?.banks || []).join("\n")} rows={8} />
+          </Field>
+          <Field label={t(lang, `बीसी कंपनी (${state.meta?.bcCompanies?.length || 0})`, `BC Companies (${state.meta?.bcCompanies?.length || 0})`)}>
+            <Area name="bcCompanies" defaultValue={(state.meta?.bcCompanies || []).join("\n")} rows={8} />
+          </Field>
+          <Field label={t(lang, `जनपद (${state.meta?.districts?.length || 0})`, `Districts (${state.meta?.districts?.length || 0})`)}>
+            <Area name="districts" defaultValue={(state.meta?.districts || []).join("\n")} rows={8} />
+          </Field>
         </div>
-        <button className="btn btn-primary" style={{ marginTop: 10 }}>सूची सेव</button>
+        <div style={{ marginTop: 18 }}>
+          <button type="submit" className="btn btn-primary" style={{ fontWeight: 800, padding: "10px 22px" }}>
+            💾 {t(lang, "मास्टर सूची सहेजें", "Save Master Lists")}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -5472,91 +5288,178 @@ function Payments({ state, saveSettings, run }) {
   const [editSigPayment, setEditSigPayment] = useState(null);
   const officers = s.signatories || [];
 
-  async function saveFees(e) {
+  // Monthly membership fee configured by Level 1 Super Admin (default: ₹50)
+  const [monthlyFee, setMonthlyFee] = useState(Number(s.monthlyMembershipFee) || 50);
+  const [calcMonths, setCalcMonths] = useState(12);
+  const [savingFee, setSavingFee] = useState(false);
+
+  // Calendar year calculations
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1; // 1..12
+  const remainingMonths = Math.max(1, 13 - currentMonth);
+
+  const monthNamesHi = ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
+  const currentMonthName = monthNamesHi[currentMonth - 1] || "";
+
+  async function handleSaveMonthlyFee(e) {
     e.preventDefault();
-    const r = Object.fromEntries(new FormData(e.target).entries());
-    ["membershipFeeGeneral", "membershipFeeDistrictOfficer", "membershipFeeCore"].forEach((k) => {
-      r[k] = Number(r[k]) || 0;
-    });
-    if (saveSettings) {
-      await saveSettings(r, t(lang, "शुल्क, यूपीआई एवं बैंक खाता विवरण सेव हो गए", "Fees, UPI & Bank details saved"));
-    } else {
-      await run("/api/settings", { method: "PUT", body: r }, t(lang, "शुल्क विवरण सेव हो गए", "Fee details saved"));
+    setSavingFee(true);
+    const feeVal = Number(monthlyFee) || 50;
+    try {
+      if (saveSettings) {
+        await saveSettings(
+          { monthlyMembershipFee: feeVal },
+          t(lang, `मासिक सदस्यता शुल्क ₹${feeVal}/माह सफलतापूर्वक सेव हो गया!`, `Monthly membership fee saved at ₹${feeVal}/month!`)
+        );
+      } else {
+        await run(
+          "/api/settings",
+          { method: "PUT", body: { monthlyMembershipFee: feeVal } },
+          t(lang, `मासिक सदस्यता शुल्क ₹${feeVal}/माह सफलतापूर्वक सेव हो गया!`, `Monthly membership fee saved at ₹${feeVal}/month!`)
+        );
+      }
+    } finally {
+      setSavingFee(false);
     }
   }
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
-      {/* ── CARD 1: शुल्क दरें, यूपीआई एवं बैंक खाता विवरण (EXACT MATCH TO REFERENCE IMAGE) ── */}
-      <form className="card-panel" onSubmit={saveFees} style={{ borderRadius: 16, padding: "26px 28px" }}>
-        <h3 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1.18rem", margin: "0 0 20px", display: "flex", alignItems: "center", gap: 8 }}>
-          💳 {t(lang, "सदस्यता शुल्क दरें, यूपीआई एवं बैंक खाता विवरण", "Membership Fee Rates, UPI & Bank Account Details")}
-        </h3>
-
-        <div className="form-grid" style={{ rowGap: 18, columnGap: 24 }}>
-          {/* Row 1 */}
+      {/* ── CARD 1: मासिक सदस्यता शुल्क एवं गणना (VARIABLE PER-MONTH MEMBERSHIP FEE) ── */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "26px 28px", borderTop: "4px solid var(--accent)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 20 }}>
           <div>
-            <label className="about-form-label">{t(lang, "सामान्य सदस्यता शुल्क (₹)", "General Membership Fee (₹)")}</label>
-            <Inp type="number" name="membershipFeeGeneral" defaultValue={s.membershipFeeGeneral || 251} required />
-          </div>
-          <div>
-            <label className="about-form-label">{t(lang, "जिला पदाधिकारी शुल्क (₹)", "District Officer Fee (₹)")}</label>
-            <Inp type="number" name="membershipFeeDistrictOfficer" defaultValue={s.membershipFeeDistrictOfficer || 501} required />
-          </div>
-
-          {/* Row 2 */}
-          <div>
-            <label className="about-form-label">{t(lang, "मुख्य कार्यकारिणी शुल्क (₹)", "Core Executive Committee Fee (₹)")}</label>
-            <Inp type="number" name="membershipFeeCore" defaultValue={s.membershipFeeCore || 1100} required />
-          </div>
-          <div>
-            <label className="about-form-label">{t(lang, "आधिकारिक UPI ID", "Official UPI ID")}</label>
-            <Inp name="upiId" defaultValue={s.upiId || "upbms.sangh@sbi"} required />
-          </div>
-
-          {/* Row 3 */}
-          <div>
-            <label className="about-form-label">{t(lang, "खाता धारक नाम", "Account Holder Name")}</label>
-            <Inp name="bankAccountName" defaultValue={s.bankAccountName || "Uttar Pradesh Bank Mitra Sangh"} required />
-          </div>
-          <div>
-            <label className="about-form-label">{t(lang, "खाता संख्या", "Bank Account Number")}</label>
-            <Inp name="bankAccountNumber" defaultValue={s.bankAccountNumber || "3984002100088412"} required />
-          </div>
-
-          {/* Row 4 */}
-          <div>
-            <label className="about-form-label">{t(lang, "IFSC कोड", "IFSC Code")}</label>
-            <Inp name="bankIfsc" defaultValue={s.bankIfsc || "SBIN0000125"} required />
-          </div>
-          <div>
-            <label className="about-form-label">{t(lang, "शाखा", "Branch")}</label>
-            <Inp name="bankBranch" defaultValue={s.bankBranch || "Hazratganj Main Branch, Lucknow"} required />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800, marginBottom: 6 }}>
+              👑 {t(lang, "केवल Level 1 (सुपर एडमिन) नियंत्रण", "Level 1 Super Admin Exclusive")}
+            </div>
+            <h3 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1.25rem", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+              💳 {t(lang, "मासिक सदस्यता शुल्क एवं शुल्क गणना प्रणाली", "Monthly Membership Fee & Calculation System")}
+            </h3>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: "6px 0 0", maxWidth: 720 }}>
+              {t(
+                lang,
+                "Level 1 सुपर एडमिन यहाँ से प्रति माह सदस्यता शुल्क की दर (₹/माह) स्वतंत्र रूप से निर्धारित कर सकते हैं। यह दर स्वतः समस्त ऑनलाइन सदस्यता भुगतान, कैलेंडर-वर्ष गणना और रसीदों पर लागू होगी।",
+                "Level 1 Super Admin can configure the per-month membership fee rate (₹/month). This variable automatically governs all online join payments, calendar-year fee calculations, and digital receipts."
+              )}
+            </p>
           </div>
         </div>
 
-        {/* Submit button matching reference image */}
-        <div style={{ marginTop: 22 }}>
-          <button
-            type="submit"
-            className="btn"
-            style={{
-              background: "#0f172a",
-              color: "#ffffff",
-              fontWeight: 800,
-              padding: "10px 22px",
-              borderRadius: 8,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              border: "none",
-              cursor: "pointer"
-            }}
-          >
-            💾 {t(lang, "शुल्क व बैंक विवरण सेव करें", "Save Fees & Bank Details")}
-          </button>
+        {/* Setting Input & Save Form */}
+        <form onSubmit={handleSaveMonthlyFee} style={{ background: "#f8fafc", padding: "18px 22px", borderRadius: 12, border: "1.5px solid #e2e8f0", marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ flex: "1 1 240px", maxWidth: 360 }}>
+              <label className="about-form-label" style={{ fontWeight: 800, color: "#1e293b" }}>
+                💰 {t(lang, "प्रति माह सदस्यता शुल्क (₹ / Month)", "Per Month Membership Fee (₹ / Month)")} *
+              </label>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontWeight: 800, color: "#64748b", fontSize: "1.1rem" }}>₹</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="form-control"
+                  style={{ paddingLeft: 30, fontSize: "1.15rem", fontWeight: 800, color: "var(--primary)" }}
+                  value={monthlyFee}
+                  onChange={(e) => setMonthlyFee(Math.max(1, Number(e.target.value) || 0))}
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={savingFee}
+              style={{ padding: "10px 24px", fontWeight: 800, borderRadius: 8, height: 44, display: "inline-flex", alignItems: "center", gap: 8 }}
+            >
+              {savingFee ? "⏳ सहेजा जा रहा है..." : `💾 ${t(lang, "शुल्क दर सहेजें", "Save Monthly Rate")}`}
+            </button>
+
+            {s.monthlyMembershipFee && (
+              <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "0.85rem", paddingBottom: 10 }}>
+                ✓ {t(lang, `वर्तमान सक्रिय दर: ₹${s.monthlyMembershipFee}/माह`, `Current Active Rate: ₹${s.monthlyMembershipFee}/month`)}
+              </span>
+            )}
+          </div>
+        </form>
+
+        {/* Current Calendar-Year Registration Rate Box */}
+        <div style={{ background: "linear-gradient(135deg, #0b1a30 0%, #1e3a8a 100%)", color: "#ffffff", padding: "18px 22px", borderRadius: 12, marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+            <div>
+              <div style={{ color: "#ffd166", fontWeight: 800, fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "1px" }}>
+                📅 {t(lang, "वर्तमान कैलेंडर वर्ष (31 दिसंबर तक वैधता)", "Current Calendar-Year Dynamic Fee (Expires Dec 31)")}
+              </div>
+              <div style={{ fontSize: "1.05rem", fontWeight: 700, marginTop: 4 }}>
+                {t(lang, `वर्तमान माह: ${currentMonthName} (${currentMonth}वां माह)`, `Current Month: ${currentMonthName} (Month ${currentMonth})`)} • {t(lang, `शेष माह: ${remainingMonths} माह`, `Remaining: ${remainingMonths} months`)}
+              </div>
+              <div style={{ fontSize: "0.84rem", color: "#cbd5e1", marginTop: 2 }}>
+                {t(lang, `गणना सूत्र: शेष माह (${remainingMonths}) × प्रति माह दर (₹${monthlyFee})`, `Formula: Remaining Months (${remainingMonths}) × Per-Month Rate (₹${monthlyFee})`)}
+              </div>
+            </div>
+            <div style={{ textAlign: "right", background: "rgba(255,255,255,0.12)", padding: "10px 18px", borderRadius: 10 }}>
+              <div style={{ fontSize: "0.8rem", color: "#ffd166", fontWeight: 700 }}>{t(lang, "नये सदस्य हेतु वर्तमान देय शुल्क", "Current Payable Fee for New Joinees")}</div>
+              <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#ffffff", lineHeight: 1.2 }}>
+                ₹{remainingMonths * monthlyFee}
+              </div>
+            </div>
+          </div>
         </div>
-      </form>
+
+        {/* Standard Multi-Month Breakdown Grid */}
+        <h4 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1rem", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+          📊 {t(lang, "अवधि अनुसार सदस्यता शुल्क गणना तालिका", "Period-wise Membership Fee Breakdown")}
+        </h4>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 24 }}>
+          {[
+            { months: 1, labelHi: "1 माह (मासिक)", labelEn: "1 Month" },
+            { months: 3, labelHi: "3 माह (त्रैमासिक)", labelEn: "3 Months (Quarterly)" },
+            { months: 6, labelHi: "6 माह (अर्धवार्षिक)", labelEn: "6 Months (Half-Yearly)" },
+            { months: 12, labelHi: "12 माह (1 वर्ष - वार्षिक)", labelEn: "12 Months (1 Year)" },
+            { months: 24, labelHi: "24 माह (2 वर्ष)", labelEn: "24 Months (2 Years)" },
+            { months: 36, labelHi: "36 माह (3 वर्ष)", labelEn: "36 Months (3 Years)" }
+          ].map((item) => (
+            <div key={item.months} style={{ background: "#ffffff", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748b" }}>{t(lang, item.labelHi, item.labelEn)}</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "var(--primary)", margin: "4px 0" }}>
+                ₹{item.months * monthlyFee}
+              </div>
+              <div style={{ fontSize: "0.74rem", color: "#94a3b8" }}>{item.months} × ₹{monthlyFee}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Interactive Custom Calculator */}
+        <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 12, padding: "16px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+            <div>
+              <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.95rem" }}>
+                🧮 {t(lang, "त्वरित शुल्क गणक (Quick Custom Months Calculator)", "Quick Custom Months Calculator")}
+              </div>
+              <div style={{ fontSize: "0.82rem", color: "#15803d", marginTop: 2 }}>
+                {t(lang, "किसी भी कस्टम अवधि (माह) के लिए कुल शुल्क का आकलन करें:", "Estimate total fee for any custom number of months:")}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <label style={{ fontSize: "0.88rem", fontWeight: 700, color: "#166534" }}>{t(lang, "माह संख्या:", "Months:")}</label>
+              <input
+                type="number"
+                min="1"
+                max="120"
+                className="form-control"
+                style={{ width: 90, fontWeight: 800, textAlign: "center" }}
+                value={calcMonths}
+                onChange={(e) => setCalcMonths(Math.max(1, Number(e.target.value) || 1))}
+              />
+              <span style={{ fontSize: "1.2rem", fontWeight: 900, color: "#166534", marginLeft: 8 }}>
+                = ₹{calcMonths * monthlyFee}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ── CARD 2: समस्त शुल्क एवं सहयोग रसीद रजिस्टर (EXACT MATCH TO REFERENCE IMAGE) ── */}
       <div className="card-panel" style={{ borderRadius: 16, padding: "24px 28px" }}>
@@ -6313,7 +6216,7 @@ function GrievanceNews({ state, saveSettings, run, session, showToast }) {
 
 function Branding({ state, saveSettings, session, showToast, persistSession, refresh }) {
   const { lang } = usePortal();
-  const [activeSection, setActiveSection] = useState("all"); // 'all' | 'identity' | 'contact' | 'theme' | 'ticker' | 'socials' | 'security'
+  const [activeSection, setActiveSection] = useState("all"); // 'all' | 'identity' | 'contact' | 'theme' | 'ticker' | 'socials'
   const s = state.settings || {};
   const sl = s.socialLinks || {};
   const [logoUrl, setLogoUrl] = useState(s.logoUrl || "/images/upbms-logo.png");
@@ -6413,19 +6316,8 @@ function Branding({ state, saveSettings, session, showToast, persistSession, ref
       }
     };
 
-    if (r.newAdminPin?.trim()) {
-      patch.newAdminPin = r.newAdminPin.trim();
-    }
-
     if (saveSettings) {
       await saveSettings(patch, t(lang, "संगठन पहचान व सोशल लिंक सफलतापूर्वक सेव हो गए", "Organization identity & branding saved successfully"));
-    }
-
-    if (r.newAdminPin?.trim()) {
-      const next = { adminPin: r.newAdminPin.trim(), isAdmin: true };
-      if (persistSession) persistSession(next);
-      if (refresh) await refresh(next);
-      showToast(t(lang, "एडमिन सुरक्षा पिन अपडेट हो गया", "Admin security PIN updated"));
     }
   }
 
@@ -6475,13 +6367,6 @@ function Branding({ state, saveSettings, session, showToast, persistSession, ref
             onClick={() => setActiveSection("socials")}
           >
             🌐 {t(lang, "5. सोशल मीडिया लिंक्स", "5. Social Media")} ({activeSocialCount})
-          </button>
-          <button
-            type="button"
-            className={`menus-subtab-btn ${activeSection === "security" ? "active" : ""}`}
-            onClick={() => setActiveSection("security")}
-          >
-            🔐 {t(lang, "6. सुरक्षा पिन", "6. Security PIN")}
           </button>
         </div>
       </div>
@@ -7046,23 +6931,6 @@ function Branding({ state, saveSettings, session, showToast, persistSession, ref
                 </button>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── SECTION 6: सुरक्षा पिन ── */}
-      {(activeSection === "all" || activeSection === "security") && (
-        <div className="card-panel" style={{ borderRadius: 16, padding: "24px 28px" }}>
-          <h3 style={{ color: "#0f172a", fontWeight: 800, fontSize: "1.15rem", margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-            🔐 {t(lang, "6. एडमिन सुरक्षा पिन (Admin Security PIN)", "6. Admin Security PIN")}
-          </h3>
-          <p style={{ color: "#64748b", fontSize: "0.85rem", margin: "0 0 16px" }}>
-            {t(lang, "यह पिन एडमिन कंट्रोल पैनल में लॉगिन करने के लिए सुरक्षित रहता है।", "This PIN secures access to the Super Admin Control Panel.")}
-          </p>
-
-          <div style={{ maxWidth: 440 }}>
-            <label className="about-form-label">{t(lang, "नया एडमिन सुरक्षा पिन (बदलना हो तो लिखें)", "New Admin PIN (Leave blank to keep current)")}</label>
-            <Inp name="newAdminPin" placeholder={t(lang, "खाली छोड़ने पर वर्तमान पिन रहेगा (डिफ़ॉल्ट: 1234)", "Leave blank to keep current PIN")} />
           </div>
         </div>
       )}

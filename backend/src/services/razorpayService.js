@@ -24,15 +24,17 @@ const crypto = require("node:crypto");
  * December    1                  ₹50       Dec 1 – Dec 31
  * ─────────────────────────────────────────────────────────────────────────────
  */
-function calculateMembershipFee(date = new Date()) {
+function calculateMembershipFee(date = new Date(), customRate = null) {
   const now = new Date(date);
   const currentYear = now.getFullYear();
   // getMonth() returns 0 for Jan, 11 for Dec -> add 1 to get 1..12
   const currentMonth = now.getMonth() + 1;
 
-  // Formula specified in requirements: price = (13 - currentMonth) * 50
+  // Formula: price = remainingMonths * ratePerMonth (default ₹50 or admin-configured)
   const remainingMonths = Math.max(1, 13 - currentMonth);
-  const ratePerMonth = 50;
+  const ratePerMonth = (customRate !== null && !isNaN(customRate) && Number(customRate) >= 0)
+    ? Number(customRate)
+    : 50;
   const price = remainingMonths * ratePerMonth;
   const amountPaise = price * 100; // Razorpay operates in smallest currency unit (Paise)
   const validUntil = `${currentYear}-12-31`;

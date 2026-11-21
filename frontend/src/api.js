@@ -11,6 +11,10 @@ export function authHeaders(session) {
   return headers;
 }
 
+// In production (Vercel), point to Render backend via VITE_API_URL env var.
+// In development, use relative path (proxied by Vite to localhost:5000).
+const API_BASE = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, "") : "";
+
 export async function api(path, { method = "GET", body, session, raw } = {}) {
   const headers = { ...authHeaders(session) };
   const opts = { method, headers, credentials: "include" };
@@ -18,7 +22,8 @@ export async function api(path, { method = "GET", body, session, raw } = {}) {
     headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(path, opts);
+  const url = API_BASE ? `${API_BASE}${path}` : path;
+  const res = await fetch(url, opts);
   if (raw) return res;
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) {
@@ -43,12 +48,12 @@ export function fileToDataUrl(file) {
  * Automatically compress and downscale high-resolution images on the client
  * to make uploads instantaneous and reduce web/mobile bandwidth.
  */
-export async function compressImageClient(file, { maxWidth = 1920, maxHeight = 1080, quality = 0.85 } = {}) {
+export async function compressImageClient(file, { maxWidth = 1600, maxHeight = 900, quality = 0.82 } = {}) {
   if (!file || !file.type || !file.type.startsWith("image/") || file.type.includes("svg") || file.type.includes("gif")) {
     return file;
   }
   // Skip if already small
-  if (file.size <= 300 * 1024) {
+  if (file.size <= 250 * 1024) {
     return file;
   }
   return new Promise((resolve) => {
@@ -131,10 +136,11 @@ export async function uploadMedia(file, session, { folder = "upbms/general", aut
   let fileToUpload = file;
   if (autoCompress && file && file.type?.startsWith("image/")) {
     try {
+      const isHeroSlide = folder.includes("slides") || folder.includes("hero") || folder.includes("banner");
       fileToUpload = await compressImageClient(file, {
-        maxWidth: folder.includes("slides") ? 1920 : 1600,
-        maxHeight: folder.includes("slides") ? 1080 : 1600,
-        quality: 0.85
+        maxWidth: isHeroSlide ? 1600 : 1200,
+        maxHeight: isHeroSlide ? 900 : 1200,
+        quality: isHeroSlide ? 0.82 : 0.85
       });
     } catch {
       fileToUpload = file;
@@ -146,7 +152,7 @@ export async function uploadMedia(file, session, { folder = "upbms/general", aut
   formData.append("file", fileToUpload);
   formData.append("folder", folder);
 
-  const res = await fetch("/api/upload", {
+  const res = await fetch(`${API_BASE}/api/upload`, {
     method: "POST",
     headers, // Do NOT set Content-Type; browser sets multipart/form-data with boundary
     body: formData

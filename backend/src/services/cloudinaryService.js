@@ -85,11 +85,11 @@ async function uploadBuffer(buffer, options = {}) {
           overwrite: true
         };
 
-        // For images (especially banners/slides), compress size and scale
+        // For images (especially banners/slides), compress size and scale according to 16:9 hero section
         if (!isPdf) {
           if (isBanner) {
             uploadParams.transformation = [
-              { width: 1920, height: 1080, crop: "limit" },
+              { width: 1600, height: 900, crop: "limit" },
               { quality: "auto:good" },
               { fetch_format: "auto" }
             ];

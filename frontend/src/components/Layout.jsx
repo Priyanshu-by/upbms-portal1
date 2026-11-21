@@ -44,18 +44,19 @@ export function Layout({ children }) {
           <div className="top-left-meta">
             <a href={`tel:${s.helplinePrimary}`} className="top-pill">📞 <b>{t(lang, "हेल्पलाइन:", "Helpline:")}</b> {s.helplinePrimary}</a>
             <a href={`mailto:${s.email}`} className="top-pill">✉️ {s.email}</a>
-            <span className={`level-pill-badge badge-level${userLevel}`}>
-              {userLevel === 1 && "👑 Level 1 (Super Admin)"}
-              {userLevel === 2 && "⭐ Level 2 (Admin)"}
-              {userLevel === 3 && "🎖️ Level 3 (Member)"}
-              {userLevel === 4 && "👤 Level 4 (Guest)"}
-            </span>
+            {(session?.member || session?.isAdmin) && userLevel < 4 && (
+              <span className={`level-pill-badge badge-level${userLevel}`}>
+                {userLevel === 1 && "👑 Super Admin"}
+                {userLevel === 2 && "⭐ Admin"}
+                {userLevel === 3 && "🎖️ Member"}
+              </span>
+            )}
             {(session?.member || session?.isAdmin) && (
               <button
                 type="button"
                 onClick={logout}
                 className="btn-top-logout"
-                title={lang === "en" ? "Logout (Switch to Level 4 Guest mode)" : "लॉगआउट करें (Level 4 मोड में वापस जाएं)"}
+                title={lang === "en" ? "Logout" : "लॉगआउट करें"}
               >
                 🔒 {t(lang, "लॉगआउट", "Logout")}
               </button>

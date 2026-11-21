@@ -23,6 +23,11 @@ const {
   verifyPaymentSignature,
   verifyWebhookSignature
 } = require("./services/razorpayService");
+
+// Helper to calculate membership pricing using admin-configurable monthly fee
+function getMembershipPricing(date = new Date()) {
+  return calculateMembershipFee(date, db.settings?.monthlyMembershipFee);
+}
 const {
   isPnbConfigured,
   getPnbPublicConfig,
@@ -1278,8 +1283,8 @@ app.post("/api/members", async (req, res) => {
   const status = isFromAdmin ? (body.status || "active") : "active";
   const today = new Date().toISOString().slice(0, 10);
   
-  // Dynamic Membership Pricing Logic (Calendar-Year System: price = (13 - currentMonth) * 50)
-  const pricing = calculateMembershipFee();
+  // Dynamic Membership Pricing Logic (Calendar-Year System: price = (13 - currentMonth) * rate)
+  const pricing = getMembershipPricing();
   const validUntil = body.validUntil || pricing.validUntil; // Expires Dec 31 of current calendar year
   const feePaid = isFromAdmin ? (body.feePaid !== undefined ? Number(body.feePaid) : 0) : pricing.price;
 
@@ -1475,7 +1480,7 @@ for (const [route, cfg] of Object.entries(collectionsMap)) {
 
 // 1. Dynamic Membership Pricing Endpoint
 app.get("/api/payment/membership-pricing", (_req, res) => {
-  const pricing = calculateMembershipFee();
+  const pricing = getMembershipPricing();
   const paymentGateways = db.settings?.paymentGateways || {
     enableRazorpay: true,
     enablePnbQr: true,
@@ -1497,7 +1502,7 @@ app.post("/api/payment/create-order", async (req, res) => {
   try {
     const body = req.body || {};
     // Calculate pricing dynamically on backend - NEVER trust frontend amount!
-    const pricing = calculateMembershipFee();
+    const pricing = getMembershipPricing();
 
     const name = String(body.nameEn || body.nameHi || "बैंक मित्र सदस्य").trim();
     const email = String(body.email || "").trim().toLowerCase();
@@ -1612,7 +1617,7 @@ app.post("/api/payment/verify", async (req, res) => {
     }
 
     // D. Calculate dynamic pricing on server (never trust frontend amount)
-    const pricing = calculateMembershipFee();
+    const pricing = getMembershipPricing();
 
     // E. Verify email token if provided
     const targetEmail = String(memberData.email || "").trim().toLowerCase();
@@ -1758,7 +1763,7 @@ app.post("/api/payment/verify", async (req, res) => {
 app.post("/api/payment/record-failed", async (req, res) => {
   try {
     const { orderId, paymentId, error = {}, memberInfo = {} } = req.body || {};
-    const pricing = calculateMembershipFee();
+    const pricing = getMembershipPricing();
     const failedPayment = {
       id: "pay-fail-" + Date.now(),
       receiptNo: "FAIL-" + String(Date.now()).slice(-6),
@@ -1820,7 +1825,7 @@ app.post("/api/payment/webhook", async (req, res) => {
         );
 
         if (!existing) {
-          const pricing = calculateMembershipFee();
+          const pricing = getMembershipPricing();
           const receiptNo = generateNextReceiptNo();
           existing = {
             id: "pay-" + Date.now(),
@@ -1900,7 +1905,7 @@ app.post("/api/payment/pnb/create-order", async (req, res) => {
     const { memberData = {}, emailVerificationToken = "" } = req.body || {};
 
     // Calculate dynamic pricing on server (never trust frontend amount)
-    const pricing = calculateMembershipFee();
+    const pricing = getMembershipPricing();
 
     const orderRes = await createPnbDynamicQrOrder({
       amount: pricing.price,
@@ -1942,7 +1947,7 @@ app.get("/api/payment/pnb/check-status/:orderId", async (req, res) => {
           (p.utrNumber && p.utrNumber === utr)
       );
 
-      const pricing = calculateMembershipFee();
+      const pricing = getMembershipPricing();
       const memberData = result.memberData || {};
       const targetEmail = String(memberData.email || "").trim().toLowerCase();
 

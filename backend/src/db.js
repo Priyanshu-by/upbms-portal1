@@ -154,10 +154,10 @@ async function loadDb() {
 }
 
 async function connectMongo() {
-  const uri = process.env.MONGO_URI;
-  if (uri) {
-    await mongoose.connect(uri);
-    console.log("MongoDB: connected using MONGO_URI");
+  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (uri && uri.trim() && !uri.includes("<db_username>")) {
+    await mongoose.connect(uri.trim());
+    console.log("MongoDB: connected to MongoDB Atlas using MONGODB_URI");
     return;
   }
 
