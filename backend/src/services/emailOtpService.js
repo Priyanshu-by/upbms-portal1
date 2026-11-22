@@ -88,15 +88,78 @@ function isGmailConfigured() {
   );
 }
 
+function isEmailServiceConfigured() {
+  return Boolean(
+    process.env.BREVO_API_KEY ||
+    process.env.RESEND_API_KEY ||
+    isGmailConfigured()
+  );
+}
+
+async function sendViaBrevo(toEmail, subject, html) {
+  const apiKey = String(process.env.BREVO_API_KEY || "").trim();
+  if (!apiKey) return null;
+  const senderEmail = String(process.env.BREVO_SENDER_EMAIL || process.env.GMAIL_USER || "upbmsofficial@gmail.com").trim();
+  const senderName = "उत्तर प्रदेश बैंक मित्र संघ";
+  const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "api-key": apiKey,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: toEmail }],
+      subject,
+      htmlContent: html
+    })
+  });
+  if (!resp.ok) {
+    const errData = await resp.json().catch(() => ({}));
+    throw new Error(errData.message || `Brevo HTTP ${resp.status}`);
+  }
+  return true;
+}
+
+async function sendViaResend(toEmail, subject, html) {
+  const apiKey = String(process.env.RESEND_API_KEY || "").trim();
+  if (!apiKey) return null;
+  const fromEmail = String(process.env.RESEND_FROM || "UPBMS <onboarding@resend.dev>").trim();
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [toEmail],
+      subject,
+      html
+    })
+  });
+  if (!resp.ok) {
+    const errData = await resp.json().catch(() => ({}));
+    throw new Error(errData.message || `Resend HTTP ${resp.status}`);
+  }
+  return true;
+}
+
 function createTransporter() {
   if (!isGmailConfigured()) return null;
   const { user, pass } = getSmtpCredentials();
   return nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
     auth: {
       user,
       pass,
     },
+    connectionTimeout: 5000, // 5s timeout to prevent long hangs on cloud free tiers
+    greetingTimeout: 5000,
+    socketTimeout: 7000
   });
 }
 
@@ -172,6 +235,29 @@ async function sendOtpEmail(toEmail, options = {}) {
       </div>
     `;
 
+    // 1. Try Brevo HTTP API (Port 443 - 100% reliable on Render free tier, no SMTP port blocks)
+    if (process.env.BREVO_API_KEY) {
+      try {
+        await sendViaBrevo(email, emailSubject, html);
+        console.log(`[EMAIL OTP (Brevo HTTPS)] Successfully dispatched OTP to ${email}`);
+        return { ok: true, devMode: false };
+      } catch (err) {
+        console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
+      }
+    }
+
+    // 2. Try Resend HTTP API (Port 443 - 100% reliable on Render free tier)
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await sendViaResend(email, emailSubject, html);
+        console.log(`[EMAIL OTP (Resend HTTPS)] Successfully dispatched OTP to ${email}`);
+        return { ok: true, devMode: false };
+      } catch (err) {
+        console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
+      }
+    }
+
+    // 3. Try Gmail Nodemailer SMTP (works locally, but Render Free Tier blocks outbound SMTP ports 465/587)
     const { user } = getSmtpCredentials();
     try {
       await transporter.sendMail({
@@ -184,13 +270,33 @@ async function sendOtpEmail(toEmail, options = {}) {
       return { ok: true, devMode: false };
     } catch (err) {
       console.error("[EMAIL OTP] Transporter error:", err.message);
-      // Fallback for development if SMTP fails
+      // Fallback: Return dev OTP so registration/reset doesn't block when Render blocks SMTP
       return {
         ok: true,
         devMode: true,
         otp,
-        warning: `Gmail SMTP Error: ${err.message}. Showing dev OTP for testing.`
+        warning: `Render Free Tier blocks SMTP ports 465/587 (${err.message}). Showing test OTP below. To send real emails, set BREVO_API_KEY or RESEND_API_KEY in Render dashboard.`
       };
+    }
+  }
+
+  // 4. Try Brevo / Resend even if Gmail is not configured
+  if (process.env.BREVO_API_KEY) {
+    try {
+      await sendViaBrevo(email, emailSubject, html);
+      console.log(`[EMAIL OTP (Brevo HTTPS)] Dispatched OTP to ${email}`);
+      return { ok: true, devMode: false };
+    } catch (err) {
+      console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
+    }
+  }
+  if (process.env.RESEND_API_KEY) {
+    try {
+      await sendViaResend(email, emailSubject, html);
+      console.log(`[EMAIL OTP (Resend HTTPS)] Dispatched OTP to ${email}`);
+      return { ok: true, devMode: false };
+    } catch (err) {
+      console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
     }
   }
 
@@ -243,5 +349,6 @@ module.exports = {
   generateRegistrationToken,
   verifyRegistrationToken,
   isGmailConfigured,
+  isEmailServiceConfigured,
   generateOtp
 };

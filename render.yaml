@@ -16,6 +16,10 @@ services:
         sync: false          # paste your Atlas URI here in Render dashboard
       - key: JWT_SECRET
         sync: false
+      - key: BREVO_API_KEY
+        sync: false          # Free transactional email on Render Free Tier (port 443 HTTPS)
+      - key: RESEND_API_KEY
+        sync: false
       - key: GMAIL_USER
         sync: false
       - key: GMAIL_APP_PASSWORD
