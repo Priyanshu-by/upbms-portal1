@@ -239,15 +239,10 @@ async function sendOtpEmail(toEmail, options = {}) {
     try {
       await sendViaResend(email, emailSubject, html);
       console.log(`[EMAIL OTP (Resend HTTPS)] Successfully dispatched OTP to ${email}`);
-      return { ok: true, devMode: false, provider: "resend" };
+      return { ok: true, provider: "resend" };
     } catch (err) {
       console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
-      return {
-        ok: true,
-        devMode: true,
-        otp,
-        warning: `Resend API Error: ${err.message}. Showing test OTP so you are not blocked.`
-      };
+      throw new Error(`ईमेल भेजने में विफल (Resend): ${err.message}`);
     }
   }
 
@@ -257,7 +252,7 @@ async function sendOtpEmail(toEmail, options = {}) {
     try {
       await sendViaBrevo(email, emailSubject, html);
       console.log(`[EMAIL OTP (Brevo HTTPS)] Successfully dispatched OTP to ${email}`);
-      return { ok: true, devMode: false, provider: "brevo" };
+      return { ok: true, provider: "brevo" };
     } catch (err) {
       console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
     }
@@ -275,26 +270,14 @@ async function sendOtpEmail(toEmail, options = {}) {
         html
       });
       console.log(`[EMAIL OTP (SMTP)] Successfully dispatched OTP to ${email}`);
-      return { ok: true, devMode: false, provider: "smtp" };
+      return { ok: true, provider: "smtp" };
     } catch (err) {
       console.error("[EMAIL OTP] Transporter error:", err.message);
-      return {
-        ok: true,
-        devMode: true,
-        otp,
-        warning: `SMTP Error: ${err.message}. Showing test OTP below. Set RESEND_API_KEY for live email delivery.`
-      };
+      throw new Error(`ईमेल भेजने में विफल (SMTP): ${err.message}`);
     }
   }
 
-  // 4. DEV MODE FALLBACK
-  console.log(`[EMAIL OTP (DEV MODE)] Generated OTP for ${email}: ${otp}`);
-  return {
-    ok: true,
-    devMode: true,
-    otp,
-    message: "RESEND_API_KEY not set in .env. Dev OTP generated for testing."
-  };
+  throw new Error("ईमेल सेवा कॉन्फ़िगर नहीं है (RESEND_API_KEY सेट करें)। / Email service is not configured.");
 }
 
 /**

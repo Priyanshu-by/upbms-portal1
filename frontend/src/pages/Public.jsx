@@ -603,7 +603,6 @@ export function JoinPage() {
   const [emailVerified, setEmailVerified] = useState(false);
   const [emailVerificationToken, setEmailVerificationToken] = useState("");
   const [emailCountdown, setEmailCountdown] = useState(0);
-  const [devOtpNotice, setDevOtpNotice] = useState("");
 
   // Payment Verification state
   const [paymentMode, setPaymentMode] = useState("UPI");
@@ -782,7 +781,6 @@ export function JoinPage() {
     }
     setErrors((prev) => ({ ...prev, email: "" }));
     setEmailSendingOtp(true);
-    setDevOtpNotice("");
 
     try {
       const res = await api("/api/auth/send-registration-otp", {
@@ -794,9 +792,6 @@ export function JoinPage() {
       });
       setEmailOtpSent(true);
       setEmailCountdown(60);
-      if (res.devMode && res.devOtp) {
-        setDevOtpNotice(`Dev OTP: ${res.devOtp}`);
-      }
       showToast(t(lang, res.message || `ओटीपी कोड ${res.emailMasked || cleanEmail} पर भेज दिया गया है।`, res.message || `OTP sent to ${res.emailMasked || cleanEmail}`));
     } catch (err) {
       setErrors((prev) => ({ ...prev, email: err.message }));
@@ -838,7 +833,6 @@ export function JoinPage() {
     setEmailOtpSent(false);
     setEmailOtp("");
     setEmailVerificationToken("");
-    setDevOtpNotice("");
   };
 
   // Full 12-month calendar-year pricing schedule
@@ -1188,6 +1182,18 @@ export function JoinPage() {
     }
 
     const cleanUtr = String(utrNumber || raw.utrNumber || "").trim();
+    if (!photoUrl || !String(photoUrl).trim()) {
+      showToast(t(lang, "⚠️ पासपोर्ट साइज फोटो अपलोड करना अनिवार्य है!", "⚠️ Passport-size photo upload is required!"));
+      return;
+    }
+    if (!signatureUrl || !String(signatureUrl).trim()) {
+      showToast(t(lang, "⚠️ प्रार्थी के हस्ताक्षर / अंगूठे का निशान अपलोड करना अनिवार्य है!", "⚠️ Applicant signature upload is required!"));
+      return;
+    }
+    if (!cleanUtr || cleanUtr.length < 6) {
+      showToast(t(lang, "⚠️ भुगतान के बाद मान्य 12-अंकीय UPI UTR नंबर दर्ज करना अनिवार्य है!", "⚠️ A valid UPI UTR number is required after payment!"));
+      return;
+    }
 
     setBusy(true);
     try {
@@ -1249,7 +1255,7 @@ export function JoinPage() {
     <section className="section-block"><div className="container">
       <SectionHead
         eyebrow={`✍️ ${t(lang, "ऑनलाइन सदस्यता पंजीकरण", "ONLINE MEMBERSHIP REGISTRATION")}`}
-        title={t(lang, "सदस्यता — Membership Application Form", "सदस्यता — Membership Application Form")}
+        title={t(lang, "सदस्यता आवेदन प्रपत्र", "Membership Application Form")}
         sub={t(lang, "आधिकारिक फॉर्म के अनुसार विवरण भरें। अनुमोदन के बाद ही सदस्यता सक्रिय होती है।", "Fill the details as per the official form. Membership becomes active only after approval.")}
       />
 
@@ -1372,7 +1378,6 @@ export function JoinPage() {
                       onChange={(e) => {
                         setEmail(e.target.value);
                         if (emailOtpSent) setEmailOtpSent(false);
-                        setDevOtpNotice("");
                         setErrors((prev) => ({ ...prev, email: "" }));
                       }}
                       required
@@ -1410,12 +1415,6 @@ export function JoinPage() {
                   {errors.email && (
                     <div style={{ color: "var(--danger)", fontSize: "0.82rem", fontWeight: 700, marginTop: 6 }}>
                       {errors.email}
-                    </div>
-                  )}
-
-                  {devOtpNotice && !emailVerified && (
-                    <div style={{ marginTop: 8, padding: "6px 12px", background: "#fef3c7", border: "1px dashed #d97706", borderRadius: 8, fontSize: "0.82rem", color: "#92400e", fontWeight: 700 }}>
-                      ⚡ {devOtpNotice} ({t(lang, "परीक्षण हेतु यह कोड नीचे दर्ज करें", "Enter this code below for verification")})
                     </div>
                   )}
 
@@ -1692,8 +1691,9 @@ export function JoinPage() {
                       name="utrNumber"
                       value={utrNumber}
                       onChange={(e) => setUtrNumber(e.target.value)}
-                      placeholder={t(lang, "12-अंकीय UPI UTR नंबर दर्ज करें", "12-digit UPI UTR number")}
+                      placeholder={t(lang, "12-अंकीय UPI UTR नंबर दर्ज करें *", "12-digit UPI UTR number *")}
                       style={{ background: "#ffffff", fontWeight: 700 }}
+                      required
                     />
                     <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: 4 }}>
                       {t(lang, "भुगतान के बाद UTR दर्ज करें। एडमिन सत्यापन के बाद रसीद जारी की जाती है।", "Enter the UTR after payment. Receipt is issued after admin verification.")}
@@ -1820,17 +1820,7 @@ export function DonatePage() {
   const upi = `upi://pay?pa=${encodeURIComponent(s.upiId || "")}&pn=${encodeURIComponent(s.upiPayeeName || "")}&cu=INR`;
   const donations = state.payments.filter((p) => p.paymentCategory === "donation");
 
-  const donorList = donations.length > 0
-    ? donations.slice(0, 5)
-    : [
-        {
-          id: "demo-donor-1",
-          payerName: "श्री बृजेश कुमार पाण्डेय",
-          payerNameEn: "Shri Brijesh Kumar Pandey",
-          district: "प्रयागराज (Prayagraj)",
-          amount: 2100
-        }
-      ];
+  const donorList = donations.slice(0, 5);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -1843,7 +1833,6 @@ export function DonatePage() {
           ...raw,
           amount: Number(amount),
           paymentCategory: "donation",
-          instantDemoVerify: true,
           payerNameEn: raw.payerName
         }
       });
@@ -1940,8 +1929,8 @@ export function DonatePage() {
             </label>
 
             <label className="form-group full">
-              {t(lang, "यूपीआई यूटीआर / रेफरेंस नंबर", "UPI UTR / Reference Number")}
-              <input className="form-control" name="utrNumber" placeholder={t(lang, "डेमो में वैकल्पिक", "Optional in demo")} />
+              {t(lang, "यूपीआई यूटीआर / रेफरेंस नंबर *", "UPI UTR / Reference Number *")}
+              <input className="form-control" name="utrNumber" placeholder={t(lang, "12-अंकीय UPI UTR / रेफरेंस नंबर दर्ज करें", "Enter 12-digit UPI UTR / Reference Number")} required />
             </label>
           </div>
 

@@ -472,7 +472,7 @@ app.post("/api/auth/forgot-password/send-otp", async (req, res) => {
   }
 
   try {
-    const result = await sendOtpEmail(targetEmail, {
+    await sendOtpEmail(targetEmail, {
       purpose: "password_reset",
       memberName: found.nameHi || found.nameEn || "सम्मानित सदस्य"
     });
@@ -486,8 +486,6 @@ app.post("/api/auth/forgot-password/send-otp", async (req, res) => {
       email: targetEmail,
       emailMasked: maskedEmail,
       memberName: found.nameHi || found.nameEn,
-      devMode: Boolean(result.devMode),
-      devOtp: result.devMode ? result.otp : undefined,
       message: `पासवर्ड रीसेट हेतु 6-अंकीय ओटीपी कोड आपके ईमेल (${maskedEmail}) पर भेज दिया गया है।`
     });
   } catch (err) {
@@ -721,9 +719,7 @@ app.post("/api/auth/send-otp", async (req, res) => {
       ok: true,
       message: `सत्यापन कोड (OTP) ${maskedEmail} पर भेज दिया गया है।`,
       email: targetEmail,
-      emailMasked: maskedEmail,
-      devMode: result.devMode,
-      devOtp: result.devMode ? result.otp : undefined
+      emailMasked: maskedEmail
     });
   } catch (err) {
     console.error("Error sending OTP email:", err.message);
@@ -845,7 +841,7 @@ app.post("/api/auth/send-registration-otp", async (req, res) => {
   }
 
   try {
-    const result = await sendOtpEmail(email, {
+    await sendOtpEmail(email, {
       purpose: "registration",
       memberName: name || "सम्मानित भावी सदस्य"
     });
@@ -857,9 +853,6 @@ app.post("/api/auth/send-registration-otp", async (req, res) => {
     return res.json({
       ok: true,
       emailMasked: maskedEmail,
-      devMode: Boolean(result.devMode),
-      devOtp: result.devMode ? result.otp : undefined,
-      warning: result.warning,
       message: `ओटीपी कोड आपके ईमेल (${maskedEmail}) पर भेज दिया गया है।`
     });
   } catch (err) {
@@ -1367,6 +1360,19 @@ app.post("/api/members", async (req, res) => {
     const existingMobile = db.members.find((m) => m.mobile && m.mobile === mobile);
     if (existingMobile) {
       return res.status(409).json({ ok: false, error: "यह मोबाइल नंबर पहले से पंजीकृत है। कृपया लॉगिन करें या दूसरा नंबर दर्ज करें। / Mobile already registered." });
+    }
+
+    const utr = String(body.utrNumber || "").trim();
+    if (!utr || utr.length < 6) {
+      return res.status(400).json({ ok: false, error: "भुगतान UTR नंबर अनिवार्य है! कृपया भुगतान के बाद मान्य UTR नंबर दर्ज करें। / Payment UTR number is required." });
+    }
+    const photo = String(body.photoUrl || "").trim();
+    if (!photo) {
+      return res.status(400).json({ ok: false, error: "पासपोर्ट साइज फोटो अपलोड करना अनिवार्य है! / Passport-size photo is required." });
+    }
+    const signature = String(body.signatureUrl || "").trim();
+    if (!signature) {
+      return res.status(400).json({ ok: false, error: "प्रार्थी के हस्ताक्षर / अंगूठे का निशान अपलोड करना अनिवार्य है! / Applicant signature is required." });
     }
   }
 
@@ -2282,9 +2288,9 @@ app.post("/api/payments", async (req, res) => {
     purpose: body.purpose || "बैंक मित्र संघर्ष एवं कल्याण कोष सहयोग राशि",
     amount: Number(body.amount) || 0,
     mode: body.mode || "UPI",
-    utrNumber: body.utrNumber || ("DEMO" + String(Date.now()).slice(-8)),
+    utrNumber: String(body.utrNumber || "").trim(),
     signatoryIds: body.signatoryIds || db.settings.defaultSignatoryIds || [db.settings.defaultSignatoryId || "sig-gs"],
-    status: body.status || (body.instantDemoVerify ? "verified" : "pending"),
+    status: body.status || "pending",
     date: body.date || new Date().toISOString().slice(0, 10)
   };
   db.payments.unshift(item);
