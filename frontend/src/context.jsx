@@ -14,22 +14,23 @@ function readSession() {
 }
 
 function getInitialRouteInfo() {
-  if (typeof window === "undefined") return { route: "home", verifyId: "" };
+  if (typeof window === "undefined") return { route: "home", verifyId: "", verifyType: "idcard" };
   try {
     const sp = new URLSearchParams(window.location.search);
     const v = sp.get("verify") || sp.get("v") || sp.get("id");
+    const t = (sp.get("type") || "idcard").toLowerCase();
     const r = sp.get("route");
-    if (v) return { route: "verify", verifyId: v };
-    if (r) return { route: r, verifyId: "" };
+    if (v) return { route: "verify", verifyId: v, verifyType: t };
+    if (r) return { route: r, verifyId: "", verifyType: "idcard" };
     const pathname = window.location.pathname.replace(/^\/+/, "");
     if (pathname.startsWith("verify")) {
       const parts = pathname.split("/");
-      return { route: "verify", verifyId: parts[1] || "" };
+      return { route: "verify", verifyId: parts[1] || "", verifyType: t };
     }
   } catch {
     /* fallback */
   }
-  return { route: "home", verifyId: "" };
+  return { route: "home", verifyId: "", verifyType: "idcard" };
 }
 
 export function PortalProvider({ children }) {
@@ -38,6 +39,7 @@ export function PortalProvider({ children }) {
   const [lang, setLang] = useState("hi");
   const [route, setRoute] = useState(initialRouteInfo.route);
   const [verifyId, setVerifyId] = useState(initialRouteInfo.verifyId);
+  const [verifyType, setVerifyType] = useState(initialRouteInfo.verifyType || "idcard");
   const [session, setSession] = useState(readSession);
   const [toast, setToast] = useState("");
   const [modal, setModal] = useState(null);
@@ -120,11 +122,11 @@ export function PortalProvider({ children }) {
   }, [persistSession, setModal, setRoute, refresh, showToast, lang]);
 
   const value = useMemo(() => ({
-    state, setState, lang, setLang, route, setRoute, verifyId, setVerifyId, session, persistSession, logout,
+    state, setState, lang, setLang, route, setRoute, verifyId, setVerifyId, verifyType, setVerifyType, session, persistSession, logout,
     toast, showToast, modal, setModal, loading, error, refresh, signed, recordSignedUsage,
     userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
   }), [
-    state, lang, route, verifyId, session, toast, modal, loading, error, refresh, signed, recordSignedUsage,
+    state, lang, route, verifyId, verifyType, session, toast, modal, loading, error, refresh, signed, recordSignedUsage,
     showToast, persistSession, logout, userLevel, isAdmin, isSuperAdmin, canAccessMembers, canAccessAdmin, canAccessUserManagement
   ]);
 

@@ -32,35 +32,39 @@ export function HomePage() {
       <section className="hero-showcase-wrapper">
         <div className="container">
           <HeroSlider />
-          <div className="campaign-impact-deck">
-            <div className="campaign-top-grid">
-              <div>
-                <div className="campaign-pill">✨ {t(lang, cb.badgeHi, cb.badgeEn)}</div>
-                <h1 className="campaign-headline">{t(lang, cb.titleHi, cb.titleEn)}</h1>
-                <p className="campaign-sub">{t(lang, cb.subtitleHi, cb.subtitleEn)}</p>
-              </div>
-              <div className="campaign-cta-stack">
-                {userLevel === 4 ? (
-                  <button className="btn btn-accent btn-lg" onClick={() => go(cb.btn1Route || "join")}>✍️ {t(lang, cb.btn1Hi, cb.btn1En)}</button>
-                ) : (
-                  <button className="btn btn-accent btn-lg" onClick={() => setRoute("idcard")}>🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र", "View ID Card & Letter")}</button>
-                )}
-                <button className="btn btn-white btn-lg" onClick={() => setRoute("about")}>📋 {t(lang, cb.btn2Hi, cb.btn2En)}</button>
-                <button className="btn btn-whatsapp btn-lg" onClick={() => setRoute(cb.btn3Route === "grievance" && !grv ? "about" : (cb.btn3Route || "grievance"))}>⚖️ {t(lang, cb.btn3Hi, cb.btn3En)}</button>
-              </div>
-            </div>
-            <div className="impact-stats-row">
-              {(s.statCards || []).map((st, i) => (
-                <div className="impact-stat-box" key={i}>
-                  <div className="impact-stat-icon">{st.icon || "⭐"}</div>
-                  <div>
-                    <div className="impact-stat-val">{t(lang, st.valueHi, st.valueEn)}</div>
-                    <div className="impact-stat-lbl">{t(lang, st.labelHi, st.labelEn)}</div>
-                  </div>
+          {stx.campaignDeckVisible !== false && (
+            <div className="campaign-impact-deck">
+              <div className="campaign-top-grid">
+                <div>
+                  <div className="campaign-pill">✨ {t(lang, cb.badgeHi, cb.badgeEn)}</div>
+                  <h1 className="campaign-headline">{t(lang, cb.titleHi, cb.titleEn)}</h1>
+                  <p className="campaign-sub">{t(lang, cb.subtitleHi, cb.subtitleEn)}</p>
                 </div>
-              ))}
+                <div className="campaign-cta-stack">
+                  {userLevel === 4 ? (
+                    <button className="btn btn-accent btn-lg" onClick={() => go(cb.btn1Route || "join")}>✍️ {t(lang, cb.btn1Hi, cb.btn1En)}</button>
+                  ) : (
+                    <button className="btn btn-accent btn-lg" onClick={() => setRoute("idcard")}>🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र", "View ID Card & Letter")}</button>
+                  )}
+                  <button className="btn btn-white btn-lg" onClick={() => document.getElementById("demands-section")?.scrollIntoView({ behavior: "smooth" })}>📋 {t(lang, cb.btn2Hi, cb.btn2En)}</button>
+                  <button className="btn btn-whatsapp btn-lg" onClick={() => setRoute(cb.btn3Route === "grievance" && !grv ? "about" : (cb.btn3Route || "grievance"))}>⚖️ {t(lang, cb.btn3Hi, cb.btn3En)}</button>
+                </div>
+              </div>
+              {stx.statBoxesVisible !== false && (
+                <div className="impact-stats-row">
+                  {(s.statCards || []).map((st, i) => (
+                    <div className="impact-stat-box" key={i}>
+                      <div className="impact-stat-icon">{st.icon || "⭐"}</div>
+                      <div>
+                        <div className="impact-stat-val">{t(lang, st.valueHi, st.valueEn)}</div>
+                        <div className="impact-stat-lbl">{t(lang, st.labelHi, st.labelEn)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </section>
 
@@ -98,7 +102,7 @@ export function HomePage() {
 
       {/* DEMANDS / CHARTER SECTION */}
       {stx.homeDemandsVisible !== false && (
-        <section className="section-block">
+        <section id="demands-section" className="section-block">
           <div className="container">
             <SectionHead
               eyebrow={`🤝 ${t(lang, stx.homeDemandsEyebrowHi, stx.homeDemandsEyebrowEn)}`}
@@ -132,7 +136,7 @@ export function HomePage() {
               title={t(lang, stx.homeMembersTitleHi, stx.homeMembersTitleEn)}
               action={
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button className="btn btn-outline btn-sm" onClick={() => setRoute("about")}>
+                  <button className="btn btn-outline btn-sm" onClick={() => { sessionStorage.setItem("upbms_scroll_target", "core-executive-section"); setRoute("about"); }}>
                     👑 {t(lang, "प्रदेश मुख्य कार्यकारिणी देखें", "View State Executive")}
                   </button>
                   <button className="btn btn-primary btn-sm" onClick={() => setRoute("members")}>
@@ -182,11 +186,6 @@ export function HomePage() {
                 </article>
               ))}
             </div>
-            <div className="social-connect-grid" style={{ marginTop: 24 }}>
-              {[["whatsappChannel", "WhatsApp Channel"], ["facebook", "Facebook"], ["youtube", "YouTube"], ["telegram", "Telegram"]].filter(([k]) => sl[k]).map(([k, label]) => (
-                <a key={k} href={sl[k]} target="_blank" rel="noreferrer" className="social-big-btn">{label}</a>
-              ))}
-            </div>
           </div>
         </section>
       )}
@@ -199,6 +198,15 @@ export function AboutPage() {
   const avm = state.settings.aboutVisionMission || {};
   const points = lang === "en" ? (avm.missionPointsEn || []) : (avm.missionPointsHi || []);
   const core = state.members.filter((m) => m.status === "active" && m.isCoreMember);
+  useEffect(() => {
+    const target = sessionStorage.getItem("upbms_scroll_target");
+    if (target) {
+      sessionStorage.removeItem("upbms_scroll_target");
+      setTimeout(() => {
+        document.getElementById(target)?.scrollIntoView({ behavior: "smooth" });
+      }, 120);
+    }
+  }, []);
   return (
     <>
       <section className="section-block"><div className="container"><div className="about-vm-card">
@@ -212,11 +220,13 @@ export function AboutPage() {
           <div className="vm-panel mission"><h2>🎯 {t(lang, avm.missionTitleHi, avm.missionTitleEn)}</h2><ul>{points.map((p) => <li key={p}>{p}</li>)}</ul></div>
         </div>
       </div></div></section>
-      <section className="section-block alt-bg"><div className="container">
-        <SectionHead eyebrow={t(lang, "आधिकारिक प्रमाणन", "OFFICIAL CERTIFICATES")} title={t(lang, avm.certSectionTitleHi || "संगठन पंजीकरण एवं प्राप्त प्रमाण-पत्र", avm.certSectionTitleEn || "Association Registrations & Certificates")} sub={t(lang, avm.certSectionSubHi, avm.certSectionSubEn)} />
-        <div className="certificates-grid">{(state.certificates || []).map((c) => <CircularCard key={c.id} item={c} kind="certificate" />)}</div>
-      </div></section>
-      <section className="section-block"><div className="container">
+      {state.settings?.sectionTexts?.certificatesVisible !== false && (
+        <section className="section-block alt-bg"><div className="container">
+          <SectionHead eyebrow={t(lang, "आधिकारिक प्रमाणन", "OFFICIAL CERTIFICATES")} title={t(lang, avm.certSectionTitleHi || "संगठन पंजीकरण एवं प्राप्त प्रमाण-पत्र", avm.certSectionTitleEn || "Association Registrations & Certificates")} sub={t(lang, avm.certSectionSubHi, avm.certSectionSubEn)} />
+          <div className="certificates-grid">{(state.certificates || []).map((c) => <CircularCard key={c.id} item={c} kind="certificate" />)}</div>
+        </div></section>
+      )}
+      <section id="core-executive-section" className="section-block"><div className="container">
         <SectionHead eyebrow={t(lang, "शीर्ष नेतृत्व", "STATE LEADERSHIP")} title={t(lang, avm.coreSectionTitleHi || "प्रदेश मुख्य कार्यकारिणी (Core Members)", avm.coreSectionTitleEn || "State Core Executive Committee (Core Members)")} sub={t(lang, avm.coreSectionSubHi, avm.coreSectionSubEn)} />
         <div className="core-members-grid">{core.map((m) => <MemberCard key={m.id} member={m} />)}</div>
       </div></section>
@@ -409,30 +419,36 @@ export function JoinPage() {
   const { state, lang, showToast, refresh, session, persistSession, setRoute, userLevel } = usePortal();
 
   if (userLevel !== 4) {
+    const isPending = session?.member && session.member.status !== "active";
     return (
       <section className="section-block">
         <div className="container" style={{ maxWidth: 650, margin: "40px auto", textAlign: "center" }}>
-          <div className="card-panel" style={{ padding: "40px 24px", borderTop: "5px solid var(--success)", borderRadius: 16 }}>
-            <div style={{ fontSize: "3rem", marginBottom: 12 }}>✅</div>
-            <span className={`badge badge-level${userLevel}`} style={{ fontSize: "0.85rem", padding: "4px 12px", marginBottom: 12, display: "inline-block" }}>
-              {userLevel === 1 && "👑 " + t(lang, "मुख्य प्रशासक", "Super Admin")}
-              {userLevel === 2 && "⭐ " + t(lang, "प्रशासक", "Admin")}
-              {userLevel === 3 && "🎖️ " + t(lang, "सक्रिय सदस्य", "Active Member")}
-            </span>
-            <h2 style={{ color: "var(--primary)", fontSize: "1.6rem", fontWeight: 900, marginTop: 8 }}>
-              {t(lang, "आप पहले से ही पंजीकृत सदस्य हैं", "You Are Already a Registered Member")}
+          <div className="card-panel" style={{ padding: "40px 24px", borderTop: `5px solid ${isPending ? "#f59e0b" : "var(--success)"}`, borderRadius: 16 }}>
+            <div style={{ fontSize: "3rem", marginBottom: 12 }}>{isPending ? "⏳" : "✅"}</div>
+            <h2 style={{ color: isPending ? "#b45309" : "var(--primary)", fontSize: "1.6rem", fontWeight: 900, marginTop: 8 }}>
+              {isPending
+                ? t(lang, "कृपया अनुमोदन की प्रतीक्षा करें (Approval Pending)", "Please Wait for Admin Approval")
+                : t(lang, "आप पहले से ही पंजीकृत सदस्य हैं", "You Are Already a Registered Member")}
             </h2>
             <p style={{ color: "var(--text-muted)", fontSize: "1rem", lineHeight: 1.6, margin: "14px 0 24px" }}>
-              {t(
-                lang,
-                "आपका सदस्यता खाता पहले से सक्रिय है। नए सदस्यता पंजीकरण की आवश्यकता केवल नए आगंतुकों के लिए है। आप अपना आधिकारिक पहचान पत्र एवं नियुक्ति पत्र देख सकते हैं।",
-                "Your account is already active. New membership registration is for new visitors only. You can view your digital ID card and appointment letter below."
-              )}
+              {isPending
+                ? t(
+                    lang,
+                    "आपका सदस्यता आवेदन राज्य कार्यालय में अनुमोदन हेतु लंबित है। Level 1 / Level 2 एडमिन द्वारा अनुमोदित होते ही आपका खाता सक्रिय हो जाएगा।",
+                    "Your membership application is pending approval from the State Office. Your Level 3 member account will activate once approved by Level 1 or Level 2 Admin."
+                  )
+                : t(
+                    lang,
+                    "आपका सदस्यता खाता पहले से सक्रिय है। नए सदस्यता पंजीकरण की आवश्यकता केवल नए आगंतुकों के लिए है। आप अपना आधिकारिक पहचान पत्र एवं नियुक्ति पत्र देख सकते हैं।",
+                    "Your account is already active. New membership registration is for new visitors only. You can view your digital ID card and appointment letter below."
+                  )}
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <button className="btn btn-primary btn-lg" onClick={() => setRoute("idcard")}>
-                🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र देखें", "View ID Card & Letter")}
-              </button>
+              {!isPending && (
+                <button className="btn btn-primary btn-lg" onClick={() => setRoute("idcard")}>
+                  🪪 {t(lang, "पहचान पत्र व नियुक्ति पत्र देखें", "View ID Card & Letter")}
+                </button>
+              )}
               <button className="btn btn-outline btn-lg" onClick={() => setRoute("home")}>
                 🏠 {t(lang, "मुख्य पृष्ठ पर जाएं", "Go to Home")}
               </button>
@@ -446,73 +462,52 @@ export function JoinPage() {
   const s = state.settings;
   const tc = s.termsAndConditions || {};
 
-  // Calendar-Year Dynamic Membership Pricing: price = (13 - currentMonth) * 50
+  // Calendar-Year Dynamic Membership Pricing
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth() + 1; // 1 (Jan) to 12 (Dec)
-  const remainingMonths = Math.max(1, 13 - currentMonth);
-  const defaultCalculatedFee = remainingMonths * 50;
+  const initEntry = s.entryFee !== undefined ? Number(s.entryFee) : 10;
+  const initRate = s.monthlyMembershipFee !== undefined ? Number(s.monthlyMembershipFee) : 20;
+  const remainingMonths = s.validityMode === "months" ? (Number(s.validityMonths) || 12) : Math.max(1, 13 - currentMonth);
+  const initSubTotal = remainingMonths * initRate;
+  const defaultCalculatedFee = initEntry + initSubTotal;
 
   const [pricingInfo, setPricingInfo] = useState({
     year: currentYear,
     currentMonth,
     remainingMonths,
-    ratePerMonth: 50,
+    entryFee: initEntry,
+    ratePerMonth: initRate,
+    subscriptionTotal: initSubTotal,
     price: defaultCalculatedFee,
     validUntil: `${currentYear}-12-31`,
-    validityDisplayEn: `${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current"} 1 – Dec 31, ${currentYear}`,
-    validityDisplayHi: `1 ${["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान"} – 31 दिसंबर ${currentYear}`,
+    validityDisplayEn: `${currentYear}-12-31 (Jan–Dec calendar year)`,
+    validityDisplayHi: `${currentYear}-12-31 (जनवरी–दिसंबर कैलेंडर वर्ष)`,
     monthNameEn: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current",
     monthNameHi: ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान",
-    purposeEn: `Annual Membership Fee (${["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][currentMonth - 1] || "Current"}–Dec ${currentYear})`,
-    purposeHi: `वार्षिक सदस्यता शुल्क (${["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"][currentMonth - 1] || "वर्तमान"}–दिसंबर ${currentYear})`
+    descriptionEn: `Entry fee ₹${initEntry} + Monthly subscription (₹${initRate} × ${remainingMonths} remaining month(s) = ₹${initSubTotal}) = Total ₹${defaultCalculatedFee}`,
+    descriptionHi: `प्रवेश शुल्क ₹${initEntry} + मासिक चन्दा (₹${initRate} × ${remainingMonths} शेष माह = ₹${initSubTotal}) = कुल ₹${defaultCalculatedFee}`,
+    purposeEn: `Membership Fee (Entry ₹${initEntry} + ${remainingMonths} mo × ₹${initRate})`,
+    purposeHi: `सदस्यता शुल्क (प्रवेश ₹${initEntry} + ₹${initRate} × ${remainingMonths} माह)`
   });
-  const gatewaySettings = state?.settings?.paymentGateways || {
-    enablePnbQr: true,
-    enableRazorpay: true,
-    enableManualUpi: true,
-    defaultGateway: "pnb_qr"
-  };
 
-  const getInitialGateway = () => {
-    const def = gatewaySettings.defaultGateway || "pnb_qr";
-    if (def === "pnb_qr" && gatewaySettings.enablePnbQr) return "pnb_qr";
-    if (def === "razorpay" && gatewaySettings.enableRazorpay) return "razorpay";
-    if (def === "manual_upi" && gatewaySettings.enableManualUpi) return "manual_upi";
-    if (gatewaySettings.enablePnbQr) return "pnb_qr";
-    if (gatewaySettings.enableRazorpay) return "razorpay";
-    if (gatewaySettings.enableManualUpi) return "manual_upi";
-    return "pnb_qr";
-  };
-
-  const [paymentGatewayType, setPaymentGatewayType] = useState(getInitialGateway);
+  const [paymentGatewayType] = useState("manual_upi");
   const [razorpayKeyId, setRazorpayKeyId] = useState("");
   const [showPricingSchedule, setShowPricingSchedule] = useState(false);
   const [payingRazorpay, setPayingRazorpay] = useState(false);
 
-  // PNB Dynamic QR State
+  // PNB Dynamic QR State (unused, kept for state safety)
   const [pnbOrder, setPnbOrder] = useState(null);
   const [pnbGenerating, setPnbGenerating] = useState(false);
   const [pnbSecondsLeft, setPnbSecondsLeft] = useState(600);
   const [pnbSimulating, setPnbSimulating] = useState(false);
 
-  // Fetch dynamic membership pricing and active gateway settings from backend server
+  // Fetch dynamic membership pricing from backend server
   useEffect(() => {
     api("/api/payment/membership-pricing")
       .then((res) => {
         if (res.ok && res.pricing) {
           setPricingInfo(res.pricing);
-          if (res.keyId) setRazorpayKeyId(res.keyId);
-          if (res.paymentGateways) {
-            const gw = res.paymentGateways;
-            const def = gw.defaultGateway || "pnb_qr";
-            if (def === "pnb_qr" && gw.enablePnbQr) setPaymentGatewayType("pnb_qr");
-            else if (def === "razorpay" && gw.enableRazorpay) setPaymentGatewayType("razorpay");
-            else if (def === "manual_upi" && gw.enableManualUpi) setPaymentGatewayType("manual_upi");
-            else if (gw.enablePnbQr) setPaymentGatewayType("pnb_qr");
-            else if (gw.enableRazorpay) setPaymentGatewayType("razorpay");
-            else if (gw.enableManualUpi) setPaymentGatewayType("manual_upi");
-          }
         }
       })
       .catch((err) => console.warn("Failed to fetch server pricing:", err.message));
@@ -580,13 +575,24 @@ export function JoinPage() {
 
   const fee = pricingInfo.price;
   const [photoUrl, setPhotoUrl] = useState("");
+  const [signatureUrl, setSignatureUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Form fields state
   const [nameHi, setNameHi] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [fatherName, setFatherName] = useState("");
+  const [age, setAge] = useState("");
   const [mobile, setMobile] = useState("");
+  const [localAddress, setLocalAddress] = useState("");
+  const singleCategoryHi = s.membershipFormConfig?.categoryHi || "साधारण सदस्य (सक्रिय बैंक मित्र)";
+  const singleCategoryEn = s.membershipFormConfig?.categoryEn || "Ordinary Member (Active Bank Mitra)";
+  const [memberCategory, setMemberCategory] = useState(singleCategoryEn);
+  const [applicationDate, setApplicationDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedBank, setSelectedBank] = useState((state.meta?.banks || [])[0] || "State Bank of India (SBI)");
+  const [customBank, setCustomBank] = useState("");
+  const [selectedBc, setSelectedBc] = useState((state.meta?.bcCompanies || [])[0] || "CSC e-Governance Services India Ltd.");
+  const [customBc, setCustomBc] = useState("");
 
   // Email OTP & Verification state
   const [email, setEmail] = useState("");
@@ -709,55 +715,42 @@ export function JoinPage() {
       return;
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-
-    img.onload = async () => {
-      URL.revokeObjectURL(objectUrl);
-      const ratio = img.naturalWidth / img.naturalHeight;
-      const targetRatio = 7 / 9;
-      const tolerance = 0.09;
-
-      if (Math.abs(ratio - targetRatio) > tolerance) {
-        const msg = t(
-          lang,
-          "गलत आकार! कृपया 7:9 (35 × 45 mm) अनुपात की पासपोर्ट साइज फोटो अपलोड करें।",
-          "Incorrect dimensions! Please upload a passport photo with 7:9 (35 × 45 mm) aspect ratio."
-        );
-        setErrors((prev) => ({ ...prev, photo: msg }));
-        showToast(msg);
-        e.target.value = "";
-        setPhotoUrl("");
-        return;
-      }
-
+    try {
+      setBusy(true);
       setErrors((prev) => ({ ...prev, photo: "" }));
-      try {
-        setBusy(true);
-        const url = await uploadFile(file, session, { folder: "upbms/members" });
-        setPhotoUrl(url);
-        showToast(t(lang, "पासपोर्ट फोटो सफलतापूर्वक अपलोड हो गई।", "Passport photo uploaded successfully."));
-      } catch (err) {
-        const msg = err.message || "Upload failed";
-        setErrors((prev) => ({ ...prev, photo: msg }));
-        showToast(msg);
-        e.target.value = "";
-        setPhotoUrl("");
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      const msg = t(lang, "छवि लोड करने में त्रुटि। कृपया मान्य फोटो चुनें।", "Unable to load image. Please select a valid photo.");
+      const url = await uploadFile(file, session, { folder: "upbms/members" });
+      setPhotoUrl(url);
+      showToast(t(lang, "पासपोर्ट फोटो सफलतापूर्वक अपलोड हो गई।", "Passport photo uploaded successfully."));
+    } catch (err) {
+      const msg = err.message || "Upload failed";
       setErrors((prev) => ({ ...prev, photo: msg }));
       showToast(msg);
       e.target.value = "";
       setPhotoUrl("");
-    };
+    } finally {
+      setBusy(false);
+    }
+  };
 
-    img.src = objectUrl;
+  const handleSignatureChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const maxSize = 2 * 1024 * 1024;
+    if (file.size > maxSize) {
+      showToast(t(lang, "हस्ताक्षर इमेज 2 MB से कम होनी चाहिए।", "Signature image must be under 2 MB."));
+      e.target.value = "";
+      return;
+    }
+    try {
+      setBusy(true);
+      const url = await uploadFile(file, session, { folder: "upbms/signatures" });
+      setSignatureUrl(url);
+      showToast(t(lang, "✓ हस्ताक्षर / अंगूठे का निशान अपलोड हो गया", "✓ Signature / thumb impression uploaded"));
+    } catch (err) {
+      showToast(err.message || "Signature upload failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Upload payment receipt proof
@@ -1154,7 +1147,7 @@ export function JoinPage() {
     const fd = new FormData(e.target);
     const raw = Object.fromEntries(fd.entries());
 
-    // 1. Mandatory Email OTP Verification Check
+    // 0. Mandatory Email OTP Verification Check
     if (!emailVerified || !emailVerificationToken) {
       const msg = t(
         lang,
@@ -1165,20 +1158,7 @@ export function JoinPage() {
       return;
     }
 
-    // 2. Mandatory Payment UTR Check (for manual UPI payment)
-    const cleanUtr = String(utrNumber || raw.utrNumber || "").trim();
-    if (!cleanUtr || cleanUtr.length < 6) {
-      const msg = t(
-        lang,
-        "⚠️ भुगतान का 12-अंकीय UTR / Transaction No दर्ज करना अनिवार्य है।",
-        "⚠️ Valid UTR / Transaction reference number is required."
-      );
-      setErrors((prev) => ({ ...prev, utr: msg }));
-      showToast(msg);
-      return;
-    }
-
-    // 3. Names validation
+    // 1. Names validation
     if (/\d|[\u0966-\u096F]/.test(raw.nameHi)) {
       const msg = t(lang, "पूरा नाम (हिंदी) में अंकों की अनुमति नहीं है।", "Numbers are not allowed in Hindi name.");
       setErrors((prev) => ({ ...prev, nameHi: msg }));
@@ -1198,7 +1178,7 @@ export function JoinPage() {
       return;
     }
 
-    // 4. Mobile validation
+    // 2. Mobile validation
     const mobileDigits = String(raw.mobile || mobile || "").trim();
     if (mobileDigits.length !== 10 || !/^\d{10}$/.test(mobileDigits)) {
       const msg = t(lang, "मोबाइल नंबर अनिवार्य रूप से ठीक 10 अंकों का होना चाहिए।", "Mobile number must be exactly 10 digits.");
@@ -1206,6 +1186,8 @@ export function JoinPage() {
       showToast(msg);
       return;
     }
+
+    const cleanUtr = String(utrNumber || raw.utrNumber || "").trim();
 
     setBusy(true);
     try {
@@ -1216,10 +1198,17 @@ export function JoinPage() {
           nameHi: raw.nameHi || nameHi,
           nameEn: raw.nameEn || nameEn,
           fatherName: raw.fatherName || fatherName,
+          age: raw.age || age,
+          localAddress: raw.localAddress || localAddress,
+          bankName: selectedBank === "__other__" ? (customBank.trim() || "Other Bank") : (raw.bankName || selectedBank),
+          bcCompany: selectedBc === "__other__" ? (customBc.trim() || "Other BC Company") : (raw.bcCompany || selectedBc),
           mobile: mobileDigits,
           email: String(email || raw.email || "").trim().toLowerCase(),
-          emailVerificationToken,
+          emailVerificationToken: emailVerificationToken || undefined,
           photoUrl,
+          signatureUrl,
+          memberCategory,
+          applicationDate: raw.applicationDate || applicationDate,
           isCoreMember: false,
           feePaid: Number(fee),
           paymentMode,
@@ -1228,9 +1217,13 @@ export function JoinPage() {
         }
       });
 
-      showToast(t(lang, `✓ सदस्यता पंजीकरण सफल! सदस्य कोड: ${result.member.memberCode}`, `✓ Registration successful! Member Code: ${result.member.memberCode}`));
+      showToast(t(
+        lang,
+        `✓ आवेदन सफलतापूर्वक जमा! सदस्य कोड: ${result.member.memberCode} (अनुमोदन लंबित)`,
+        `✓ Application submitted! Member Code: ${result.member.memberCode} (Pending Approval)`
+      ));
 
-      // Auto-login newly registered Level 3 member
+      // Auto-login as pending member so user sees Waiting for Approval status
       const memberPass = raw.password || "123456";
       persistSession({
         memberId: result.member.id,
@@ -1252,1027 +1245,552 @@ export function JoinPage() {
     }
   }
 
-  const isFormReady = (paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay")
-    ? (emailVerified && Boolean(emailVerificationToken))
-    : (emailVerified && utrNumber.trim().length >= 6);
-
   return (
     <section className="section-block"><div className="container">
       <SectionHead
-        eyebrow={`✍️ ${t(lang, "ऑनलाइन सदस्यता पोर्टल", "ONLINE MEMBERSHIP PORTAL")}`}
-        title={t(lang, "बैंक मित्र सदस्यता पंजीकरण एवं वार्षिक शुल्क सत्यापन", "Bank Mitra Membership Registration & Annual Fee Payment")}
-        sub={t(lang, "ईमेल व भुगतान सत्यापन पूर्ण होते ही डिजिटल पहचान पत्र, नियुक्ति पत्र एवं आधिकारिक रसीद तत्काल जारी की जाती है।", "Receive your verified digital ID card, appointment letter and official receipt immediately upon email and fee verification.")}
+        eyebrow={`✍️ ${t(lang, "ऑनलाइन सदस्यता पंजीकरण", "ONLINE MEMBERSHIP REGISTRATION")}`}
+        title={t(lang, "सदस्यता — Membership Application Form", "सदस्यता — Membership Application Form")}
+        sub={t(lang, "आधिकारिक फॉर्म के अनुसार विवरण भरें। अनुमोदन के बाद ही सदस्यता सक्रिय होती है।", "Fill the details as per the official form. Membership becomes active only after approval.")}
       />
 
-      {/* 3-Step Guided Progress Card */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, marginBottom: 24 }}>
-        <div style={{
-          background: emailVerified ? "#f0fdf4" : "#eff6ff",
-          border: `1.5px solid ${emailVerified ? "#16a34a" : "#2563eb"}`,
-          borderRadius: 12,
-          padding: "14px 16px",
-          display: "flex",
-          alignItems: "center",
-          gap: 12
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            background: emailVerified ? "#16a34a" : "#2563eb",
-            color: "#ffffff",
-            display: "grid",
-            placeItems: "center",
-            fontWeight: 900
-          }}>
-            {emailVerified ? "✓" : "1"}
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: emailVerified ? "#16a34a" : "#1e3a8a" }}>
-              {t(lang, "चरण 1: व्यक्तिगत विवरण व ईमेल OTP", "Step 1: Details & Email OTP")}
-            </div>
-            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-              {emailVerified ? t(lang, "✓ ईमेल सत्यापित", "✓ Email Verified") : t(lang, "ईमेल पर 6-अंकीय कोड सत्यापित करें", "Verify 6-digit code sent to email")}
-            </div>
-          </div>
+      {/* IMPORTANT — Approval Required Banner (matches Image 5) */}
+      <div style={{
+        background: "#fefce8",
+        border: "1.5px solid #fde047",
+        borderRadius: 12,
+        padding: "14px 18px",
+        marginBottom: 22
+      }}>
+        <div style={{ fontWeight: 900, fontSize: "0.95rem", color: "#854d0e", display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <span>⏳</span>
+          <span>{t(lang, "महत्वपूर्ण — अनुमोदन आवश्यक (IMPORTANT — Approval Required)", "IMPORTANT — Approval Required")}</span>
         </div>
-
-        <div style={{
-          background: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#f0fdf4" : "#fefce8",
-          border: `1.5px solid ${((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#ca8a04"}`,
-          borderRadius: 12,
-          padding: "14px 16px",
-          display: "flex",
-          alignItems: "center",
-          gap: 12
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            background: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#ca8a04",
-            color: "#ffffff",
-            display: "grid",
-            placeItems: "center",
-            fontWeight: 900
-          }}>
-            {((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "✓" : "2"}
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: ((paymentGatewayType === "pnb_qr" || paymentGatewayType === "razorpay") ? emailVerified : utrNumber.trim().length >= 6) ? "#16a34a" : "#854d0e" }}>
-              {t(lang, `चरण 2: ₹${fee} कैलेंडर वर्ष सदस्यता शुल्क`, `Step 2: ₹${fee} Calendar-Year Fee`)}
-            </div>
-            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-              {paymentGatewayType === "pnb_qr"
-                ? t(lang, `PNB डायनामिक UPI QR (वैधता: 31 दिसंबर ${pricingInfo.year})`, `PNB Dynamic UPI QR (Valid till Dec 31, ${pricingInfo.year})`)
-                : paymentGatewayType === "razorpay"
-                ? t(lang, `रेज़रपे सुरक्षित गेटवे (वैधता: 31 दिसंबर ${pricingInfo.year})`, `Razorpay Secure Gateway (Valid till Dec 31, ${pricingInfo.year})`)
-                : t(lang, `मैनुअल UPI QR व 12-अंकीय UTR`, `Manual UPI QR & 12-digit UTR`)}
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          background: isFormReady ? "#f0fdf4" : "#f8fafc",
-          border: `1.5px solid ${isFormReady ? "#16a34a" : "#cbd5e1"}`,
-          borderRadius: 12,
-          padding: "14px 16px",
-          display: "flex",
-          alignItems: "center",
-          gap: 12
-        }}>
-          <div style={{
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            background: isFormReady ? "#16a34a" : "#94a3b8",
-            color: "#ffffff",
-            display: "grid",
-            placeItems: "center",
-            fontWeight: 900
-          }}>
-            3
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: "0.92rem", color: isFormReady ? "#16a34a" : "#475569" }}>
-              {t(lang, "चरण 3: नियम स्वीकृति व सदस्यता सक्रियण", "Step 3: Terms & Membership Activation")}
-            </div>
-            <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-              {t(lang, "तत्काल पहचान पत्र व रसीद प्राप्त करें", "Instant digital ID card & appointment letter")}
-            </div>
-          </div>
+        <div style={{ fontSize: "0.86rem", color: "#713f12", lineHeight: 1.55 }}>
+          {t(
+            lang,
+            "पंजीकरण के बाद आपकी सदस्यता लंबित (Pending) रहेगी। राज्य कार्यालय से अनुमोदन के बाद ही पहचान पत्र, नियुक्ति पत्र और रसीद उपलब्ध होंगे। आप वेबसाइट पर लॉगिन करके अनुमोदन की स्थिति देख सकते हैं।",
+            "After registration your membership stays Pending. Identity Card, Appointment Letter and Receipt become available only after approval by the State Office. You can check the approval status by logging in on the website."
+          )}
         </div>
       </div>
 
       <div className="join-layout-grid">
         {/* Left Column: Registration Form */}
-        <form id="join-membership-form" className="card-panel" onSubmit={onSubmit}>
-          <h3 style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--primary)", marginBottom: 20, fontSize: "1.15rem", fontWeight: 900 }}>
-            ✍️ {t(lang, "नया बैंक मित्र सदस्यता आवेदन प्रपत्र", "New Bank Mitra Membership Application Form")}
-          </h3>
-
-          <div className="form-grid">
-            <Field
-              label={t(lang, "पूरा नाम (हिंदी में) *", "Full Name (Hindi) *")}
-              name="nameHi"
-              value={nameHi}
-              placeholder={t(lang, "उदा: सुरेश चंद्र मौर्य", "e.g. Suresh Chandra Maurya")}
-              required
-              error={errors.nameHi}
-              onChange={handleNameChange("nameHi", setNameHi, "पूरा नाम (हिंदी)", "Hindi name")}
-            />
-            <Field
-              label={t(lang, "पूरा नाम (अंग्रेज़ी में) *", "Full Name (English) *")}
-              name="nameEn"
-              value={nameEn}
-              placeholder="e.g. Suresh Chandra Maurya"
-              required
-              error={errors.nameEn}
-              onChange={handleNameChange("nameEn", setNameEn, "पूरा नाम (अंग्रेज़ी)", "English name")}
-            />
-            <Field
-              label={t(lang, "पिता का नाम *", "Father's Name *")}
-              name="fatherName"
-              value={fatherName}
-              placeholder={t(lang, "उदा: राम प्रसाद मौर्य", "e.g. Ram Prasad Maurya")}
-              required
-              error={errors.fatherName}
-              onChange={handleNameChange("fatherName", setFatherName, "पिता का नाम", "Father's name")}
-            />
-            <Field
-              label={t(lang, "मोबाइल नंबर (WhatsApp) *", "Mobile Number (WhatsApp) *")}
-              name="mobile"
-              value={mobile}
-              placeholder={t(lang, "10 अंकों का मोबाइल नंबर", "10-digit mobile number")}
-              required
-              maxLength={10}
-              error={errors.mobile}
-              onChange={handleMobileInput}
-            />
-
-            {/* EMAIL VERIFICATION SECTION (MANDATORY OTP) */}
-            <div className="form-group full" style={{
-              background: emailVerified ? "#f0fdf4" : "#f8fafc",
-              border: `1.5px solid ${emailVerified ? "#16a34a" : "#cbd5e1"}`,
-              borderRadius: 12,
-              padding: "16px",
-              marginTop: 4
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontWeight: 800, fontSize: "0.95rem", color: emailVerified ? "#16a34a" : "var(--primary)" }}>
-                  ✉️ {t(lang, "ईमेल पता एवं सुरक्षा सत्यापन *", "Email Address & OTP Verification *")}
-                </span>
-                {emailVerified && (
-                  <span style={{ background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800 }}>
-                    ✓ {t(lang, "ईमेल सत्यापित (Verified)", "Email Verified")}
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <input
-                  type="email"
-                  name="email"
-                  className={`form-control ${errors.email ? "is-invalid" : ""}`}
-                  placeholder="e.g. yourname@gmail.com"
-                  value={email}
-                  readOnly={emailVerified}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (emailOtpSent) setEmailOtpSent(false);
-                    setDevOtpNotice("");
-                    setErrors((prev) => ({ ...prev, email: "" }));
-                  }}
-                  required
-                  style={{ flex: "1 1 240px", backgroundColor: emailVerified ? "#f0fdf4" : "#ffffff" }}
-                />
-
-                {!emailVerified ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={emailSendingOtp || !email || emailCountdown > 0}
-                    onClick={handleSendEmailOtp}
-                    style={{ whiteSpace: "nowrap", minWidth: 130 }}
-                  >
-                    {emailSendingOtp
-                      ? t(lang, "भेज रहे हैं...", "Sending...")
-                      : emailCountdown > 0
-                      ? `${t(lang, "पुनः भेजें", "Resend")} (${emailCountdown}s)`
-                      : emailOtpSent
-                      ? t(lang, "पुनः OTP भेजें", "Resend OTP")
-                      : t(lang, "ओटीपी भेजें (Send OTP)", "Send OTP")}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    onClick={handleResetEmail}
-                    title={t(lang, "ईमेल बदलें", "Change Email")}
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    ✏️ {t(lang, "ईमेल बदलें", "Change Email")}
-                  </button>
-                )}
-              </div>
-
-              {errors.email && (
-                <div style={{ color: "var(--danger)", fontSize: "0.82rem", fontWeight: 700, marginTop: 6 }}>
-                  {errors.email}
-                </div>
-              )}
-
-              {/* Dev Mode OTP helper banner */}
-              {devOtpNotice && !emailVerified && (
-                <div style={{ marginTop: 8, padding: "6px 12px", background: "#fef3c7", border: "1px dashed #d97706", borderRadius: 8, fontSize: "0.82rem", color: "#92400e", fontWeight: 700 }}>
-                  ⚡ {devOtpNotice} ({t(lang, "डेमो परीक्षण हेतु यह कोड नीचे दर्ज करें", "Enter this code below for test verification")})
-                </div>
-              )}
-
-              {/* OTP Input row (revealed when OTP sent and not yet verified) */}
-              {emailOtpSent && !emailVerified && (
-                <div style={{ marginTop: 12, padding: 12, background: "#ffffff", borderRadius: 8, border: "1px solid #bfdbfe" }}>
-                  <div style={{ fontSize: "0.84rem", color: "#1e40af", fontWeight: 700, marginBottom: 8 }}>
-                    📩 {t(lang, `आपके ईमेल (${email}) पर 6-अंकीय सत्यापन कोड भेजा गया है। कोड दर्ज करें:`, `A 6-digit verification code was sent to ${email}. Enter code:`)}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={emailOtp}
-                      onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      placeholder="6-Digit OTP (उदा: 542109)"
-                      className="form-control"
-                      style={{ maxWidth: 220, fontSize: "1.1rem", letterSpacing: 3, fontWeight: 900, textAlign: "center" }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-accent"
-                      disabled={emailVerifyingOtp || emailOtp.length !== 6}
-                      onClick={handleVerifyEmailOtp}
-                      style={{ whiteSpace: "nowrap", padding: "10px 20px", fontWeight: 800 }}
-                    >
-                      {emailVerifyingOtp ? t(lang, "सत्यापित कर रहे हैं...", "Verifying...") : `✓ ${t(lang, "सत्यापित करें (Verify)", "Verify OTP")}`}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <label className="form-group">
-              {t(lang, "जनपद *", "District *")}
-              <select className="form-control" name="district" required>
-                {state.meta.districts.map((d) => <option key={d} value={d}>{localizeDual(d, lang)}</option>)}
-              </select>
-            </label>
-
-            <Field label={t(lang, "ब्लॉक / केंद्र का नाम *", "Block / Center Name *")} name="block" placeholder="उदा: सरसौल / कल्याणपुर" required />
-
-            <label className="form-group">
-              {t(lang, "संबंधित बैंक *", "Associated Bank *")}
-              <select className="form-control" name="bankName" required>
-                {state.meta.banks.map((b) => <option key={b}>{b}</option>)}
-              </select>
-            </label>
-
-            <label className="form-group">
-              {t(lang, "कॉर्पोरेट बीसी कंपनी *", "Corporate BC Company *")}
-              <select className="form-control" name="bcCompany" required>
-                {state.meta.bcCompanies.map((c) => <option key={c}>{c}</option>)}
-              </select>
-            </label>
-
-            <Field label={t(lang, "केओ / सीएसपी कोड *", "KO / CSP Code *")} name="koCode" placeholder="e.g. SBI-KNP-5501" required />
-            <Field label={t(lang, "लॉगिन पासवर्ड बनाएँ *", "Create Login Password *")} name="password" type="password" placeholder={t(lang, "कम से कम 4 अक्षर", "Minimum 4 characters")} required minLength={4} />
-
-            {/* Passport Size Photo with Specific Validation */}
-            <label className="form-group">
-              {t(lang, "पासपोर्ट साइज फोटो", "Passport Size Photo")}
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                onChange={handlePassportPhotoChange}
-              />
-              {photoUrl && (
-                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
-                  <img src={photoUrl} alt="Preview" style={{ width: 56, height: 72, objectFit: "cover", borderRadius: 6, border: "2px solid #0a2252" }} />
-                  <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 700 }}>✓ {t(lang, "फोटो अपलोड हो गई", "Photo uploaded")}</span>
-                </div>
-              )}
-              {errors.photo && (
-                <div style={{ color: "var(--danger)", fontSize: "0.8rem", fontWeight: 700, marginTop: 4 }}>
-                  {errors.photo}
-                </div>
-              )}
-            </label>
-
-            {/* 1. CALENDAR-YEAR DYNAMIC MEMBERSHIP PRICING BREAKDOWN CARD */}
-            <div className="form-group full" style={{
-              background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
-              border: "1.5px solid #10b981",
-              borderRadius: 14,
-              padding: 16
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: "1.2rem" }}>📅</span>
-                    <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#065f46" }}>
-                      {t(lang, `कैलेंडर वर्ष सदस्यता शुल्क प्रणाली (${pricingInfo.year})`, `Calendar-Year Membership System (${pricingInfo.year})`)}
-                    </span>
-                    <span style={{ background: "#d1fae5", color: "#047857", padding: "2px 8px", borderRadius: 12, fontSize: "0.75rem", fontWeight: 800 }}>
-                      ₹50 / {t(lang, "माह", "month")}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: "0.84rem", color: "#047857", marginTop: 4, fontWeight: 700 }}>
-                    {t(
-                      lang,
-                      `वर्तमान खरीद माह: ${pricingInfo.monthNameHi} • शेष अवधि: ${pricingInfo.remainingMonths} माह (${pricingInfo.validityDisplayHi})`,
-                      `Purchase Month: ${pricingInfo.monthNameEn} • Remaining: ${pricingInfo.remainingMonths} months (${pricingInfo.validityDisplayEn})`
-                    )}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "#4b5563", marginTop: 2 }}>
-                    {t(lang, "गणना सूत्र:", "Formula:")} <code>price = (13 - {pricingInfo.currentMonth}) × ₹50 = ₹{pricingInfo.price}</code>
-                  </div>
-                </div>
-
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "0.78rem", color: "#6b7280", fontWeight: 700, textTransform: "uppercase" }}>
-                    {t(lang, "कुल देय शुल्क", "Total Payable Fee")}
-                  </div>
-                  <div style={{ fontSize: "1.85rem", fontWeight: 900, color: "#065f46", lineHeight: 1 }}>
-                    ₹{pricingInfo.price}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "#059669", fontWeight: 800, marginTop: 3 }}>
-                    ✓ {t(lang, `31 दिसंबर ${pricingInfo.year} तक पूर्ण वैध`, `Valid till Dec 31, ${pricingInfo.year}`)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Toggle 12-Month Schedule Modal/Table */}
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #6ee7b7", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowPricingSchedule(!showPricingSchedule)}
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #10b981",
-                    color: "#065f46",
-                    padding: "5px 12px",
-                    borderRadius: 8,
-                    fontSize: "0.78rem",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6
-                  }}
-                >
-                  <span>📊</span>
-                  <span>{showPricingSchedule ? t(lang, "मूल्य तालिका छिपाएं", "Hide Pricing Table") : t(lang, "सभी 12 महीनों की शुल्क तालिका देखें (₹50/माह)", "View Full 12-Month Pricing Structure")}</span>
-                </button>
-                <span style={{ fontSize: "0.76rem", color: "#6b7280" }}>
-                  🔒 {t(lang, "सर्वर द्वारा सुरक्षित गतिशील गणना", "Dynamically calculated by backend server")}
-                </span>
-              </div>
-
-              {showPricingSchedule && (
-                <div style={{ marginTop: 12, background: "#ffffff", borderRadius: 10, border: "1px solid #cbd5e1", overflowX: "auto", fontSize: "0.78rem" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                    <thead style={{ background: "#f1f5f9", fontWeight: 900, color: "#1e293b" }}>
-                      <tr>
-                        <th style={{ padding: "8px 10px" }}>{t(lang, "खरीद माह (Purchase Month)", "Purchase Month")}</th>
-                        <th style={{ padding: "8px 10px" }}>{t(lang, "शेष माह (Months)", "Remaining")}</th>
-                        <th style={{ padding: "8px 10px" }}>{t(lang, "सदस्यता शुल्क (Price)", "Price")}</th>
-                        <th style={{ padding: "8px 10px" }}>{t(lang, "वैधता (Validity)", "Validity")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {PRICING_SCHEDULE.map((item, idx) => {
-                        const isCurrent = idx + 1 === pricingInfo.currentMonth;
-                        return (
-                          <tr key={item.month} style={{
-                            background: isCurrent ? "#dcfce7" : idx % 2 === 0 ? "#f8fafc" : "#ffffff",
-                            fontWeight: isCurrent ? 900 : 500,
-                            color: isCurrent ? "#166534" : "#334155"
-                          }}>
-                            <td style={{ padding: "6px 10px" }}>
-                              {lang === "hi" ? item.monthHi : item.month} {isCurrent && <span style={{ background: "#16a34a", color: "#fff", padding: "1px 6px", borderRadius: 10, fontSize: "0.68rem" }}>Current Month</span>}
-                            </td>
-                            <td style={{ padding: "6px 10px" }}>{item.remaining} {t(lang, "माह", "months")}</td>
-                            <td style={{ padding: "6px 10px", fontWeight: 800 }}>₹{item.price}</td>
-                            <td style={{ padding: "6px 10px" }}>{item.validity}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* 2. PAYMENT METHOD SELECTION TABS */}
-            <div className="form-group full" style={{ marginTop: 4 }}>
-              <label style={{ fontSize: "0.86rem", fontWeight: 900, color: "var(--primary)", marginBottom: 8, display: "block" }}>
-                💳 {t(lang, "भुगतान विधि चुनें (Payment Method) *", "Choose Payment Gateway / Method *")}
-              </label>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 14 }}>
-                {gatewaySettings.enablePnbQr && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentGatewayType("pnb_qr")}
-                    style={{
-                      background: paymentGatewayType === "pnb_qr" ? "#eff6ff" : "#ffffff",
-                      border: `2px solid ${paymentGatewayType === "pnb_qr" ? "#2563eb" : "#cbd5e1"}`,
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10
-                    }}
-                  >
-                    <div style={{ fontSize: "1.4rem" }}>🏛️</div>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "pnb_qr" ? "#1e40af" : "#1e293b" }}>
-                        PNB Dynamic QR
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        {t(lang, "आधिकारिक बैंक QR (UPI)", "Official Bank QR (UPI)")}
-                      </div>
-                    </div>
-                  </button>
-                )}
-
-                {gatewaySettings.enableRazorpay && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentGatewayType("razorpay")}
-                    style={{
-                      background: paymentGatewayType === "razorpay" ? "#eff6ff" : "#ffffff",
-                      border: `2px solid ${paymentGatewayType === "razorpay" ? "#2563eb" : "#cbd5e1"}`,
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10
-                    }}
-                  >
-                    <div style={{ fontSize: "1.4rem" }}>⚡</div>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "razorpay" ? "#1e40af" : "#1e293b" }}>
-                        Razorpay Checkout
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        UPI, Cards, NetBanking ({t(lang, "तत्काल सक्रियण", "Instant Activation")})
-                      </div>
-                    </div>
-                  </button>
-                )}
-
-                {gatewaySettings.enableManualUpi && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentGatewayType("manual_upi")}
-                    style={{
-                      background: paymentGatewayType === "manual_upi" ? "#eff6ff" : "#ffffff",
-                      border: `2px solid ${paymentGatewayType === "manual_upi" ? "#2563eb" : "#cbd5e1"}`,
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      textAlign: "left",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10
-                    }}
-                  >
-                    <div style={{ fontSize: "1.4rem" }}>📱</div>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: paymentGatewayType === "manual_upi" ? "#1e40af" : "#1e293b" }}>
-                        Manual UPI QR & UTR
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        {t(lang, "QR स्कैन करें व UTR नंबर दर्ज करें", "Scan QR & Enter 12-digit UTR")}
-                      </div>
-                    </div>
-                  </button>
-                )}
-              </div>
-
-              {/* TAB CONTENT A: PNB DYNAMIC QR */}
-              {paymentGatewayType === "pnb_qr" && (
-                <div style={{
-                  border: "2px solid #2563eb",
-                  borderRadius: 14,
-                  padding: 20,
-                  background: "#ffffff"
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-                    <div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1e3a8a", display: "flex", alignItems: "center", gap: 8 }}>
-                        <span>🏛️</span>
-                        <span>{t(lang, "पंजाब नैशनल बैंक (PNB) डायनामिक UPI QR", "Punjab National Bank (PNB) Dynamic UPI QR")}</span>
-                      </div>
-                      <div style={{ fontSize: "0.82rem", color: "#64748b", marginTop: 2 }}>
-                        {t(lang, `देय सदस्यता शुल्क: ₹${fee} (${pricingInfo.remainingMonths} माह @ ₹50/माह • 31 दिसंबर ${pricingInfo.year} तक वैध)`, `Payable Membership Fee: ₹${fee} (${pricingInfo.remainingMonths} months @ ₹50/mo • Valid till Dec 31, ${pricingInfo.year})`)}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#dbeafe", color: "#1e40af", padding: "4px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
-                      <span>🔒</span>
-                      <span>NPCI & PNB Server-Verified</span>
-                    </div>
-                  </div>
-
-                  {!pnbOrder ? (
-                    /* Initial State: Button to Generate Dynamic QR */
-                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#f8fafc", borderRadius: 12, border: "1px dashed #93c5fd" }}>
-                      <div style={{ fontSize: "2.2rem", marginBottom: 8 }}>📲</div>
-                      <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1e293b", marginBottom: 4 }}>
-                        {t(lang, `₹${fee} की सटीक राशि का PNB डायनामिक QR कोड तैयार करें`, `Generate Dynamic UPI QR Code for ₹${fee}`)}
-                      </div>
-                      <div style={{ fontSize: "0.84rem", color: "#64748b", maxWidth: 520, margin: "0 auto 16px auto" }}>
-                        {t(
-                          lang,
-                          "प्रत्येक आवेदक के लिए एक अनूठा, समयबद्ध UPI QR कोड तैयार किया जाता है जिसमें सदस्यता शुल्क की सटीक राशि एम्बेड होती है। किसी भी UPI ऐप (GPay, PhonePe, Paytm, BHIM) से स्कैन करते ही सर्वर स्वचालित रूप से भुगतान की पुष्टि करेगा।",
-                          "A unique, time-limited dynamic UPI QR code containing the exact membership fee will be generated. Once scanned with any UPI app, our server automatically detects confirmation in real-time."
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="btn btn-accent btn-lg"
-                        disabled={pnbGenerating || !emailVerified}
-                        onClick={handleGeneratePnbQr}
-                        style={{
-                          padding: "13px 26px",
-                          fontSize: "1.02rem",
-                          fontWeight: 900,
-                          cursor: emailVerified ? "pointer" : "not-allowed",
-                          opacity: emailVerified ? 1 : 0.65,
-                          boxShadow: "0 4px 14px rgba(37, 99, 235, 0.25)"
-                        }}
-                      >
-                        {pnbGenerating ? (
-                          <>
-                            <span className="login-spinner"></span>
-                            <span>{t(lang, "PNB डायनामिक QR कोड तैयार किया जा रहा है...", "Generating PNB Dynamic QR...")}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>⚡</span>
-                            <span>{t(lang, `PNB डायनामिक QR कोड जनरेट करें (देय: ₹${fee})`, `Generate PNB Dynamic QR (Payable: ₹${fee})`)}</span>
-                          </>
-                        )}
-                      </button>
-
-                      {!emailVerified && (
-                        <div style={{ marginTop: 12, fontSize: "0.82rem", color: "#b45309", fontWeight: 700 }}>
-                          ⚠️ {t(lang, "डायनामिक QR जनरेट करने से पूर्व ऊपर फॉर्म में 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above before generating the dynamic QR code.")}
-                        </div>
-                      )}
-                    </div>
-                  ) : pnbOrder.status === "EXPIRED" ? (
-                    /* Expired State */
-                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#fef2f2", borderRadius: 12, border: "1px solid #fca5a5" }}>
-                      <div style={{ fontSize: "2rem", marginBottom: 6 }}>⏱️</div>
-                      <div style={{ fontWeight: 800, fontSize: "1.02rem", color: "#991b1b", marginBottom: 4 }}>
-                        {t(lang, "QR कोड की समय-सीमा (10 मिनट) समाप्त हो चुकी है", "Dynamic QR Code Expired (10-Minute Timeout)")}
-                      </div>
-                      <div style={{ fontSize: "0.84rem", color: "#7f1d1d", marginBottom: 14 }}>
-                        {t(lang, "सुरक्षा कारणों से डायनामिक UPI QR कोड केवल 10 मिनट के लिए मान्य रहता है। कृपया नया कोड जनरेट करें।", "For banking security, dynamic UPI QR codes expire after 10 minutes. Please generate a fresh code.")}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={handleGeneratePnbQr}
-                        disabled={pnbGenerating}
-                        style={{ fontWeight: 800 }}
-                      >
-                        🔄 {t(lang, "नया PNB डायनामिक QR जनरेट करें", "Generate Fresh PNB Dynamic QR")}
-                      </button>
-                    </div>
-                  ) : pnbOrder.status === "SUCCESS" ? (
-                    /* Success State */
-                    <div style={{ textAlign: "center", padding: "20px 14px", background: "#f0fdf4", borderRadius: 12, border: "1px solid #86efac" }}>
-                      <div style={{ fontSize: "2.2rem", marginBottom: 6 }}>✅</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.15rem", color: "#166534", marginBottom: 4 }}>
-                        {t(lang, "भुगतान सफलतापूर्वक सत्यापित हो गया!", "Payment Verified Successfully!")}
-                      </div>
-                      <div style={{ fontSize: "0.86rem", color: "#15803d" }}>
-                        {t(lang, "आपकी सदस्यता सक्रिय कर दी गई है। आपको आपके पहचान पत्र पृष्ठ पर ले जाया जा रहा है...", "Your membership has been activated. Redirecting to your ID Card...")}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Active Pending State with Live QR and Polling */
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, alignItems: "center" }}>
-                      {/* Left: Dynamic QR display */}
-                      <div style={{ textAlign: "center", background: "#f8fafc", padding: 16, borderRadius: 12, border: "1px solid #e2e8f0" }}>
-                        <div
-                          style={{ display: "inline-block", background: "#ffffff", padding: 12, borderRadius: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
-                          dangerouslySetInnerHTML={{ __html: qrSvg(pnbOrder.qrString, 210) }}
-                        />
-
-                        {/* Expiry Countdown Badge */}
-                        <div style={{
-                          marginTop: 12,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          background: pnbSecondsLeft < 120 ? "#fee2e2" : "#fef3c7",
-                          color: pnbSecondsLeft < 120 ? "#991b1b" : "#92400e",
-                          padding: "5px 12px",
-                          borderRadius: 20,
-                          fontSize: "0.82rem",
-                          fontWeight: 800
-                        }}>
-                          <span>⏱️</span>
-                          <span>
-                            {t(lang, "समय शेष:", "Valid for:")}{" "}
-                            <b>{Math.floor(pnbSecondsLeft / 60)}:{String(pnbSecondsLeft % 60).padStart(2, "0")}</b>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Right: Details & Status */}
-                      <div>
-                        <div style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          background: "#e0f2fe",
-                          color: "#0369a1",
-                          padding: "6px 12px",
-                          borderRadius: 20,
-                          fontSize: "0.82rem",
-                          fontWeight: 800,
-                          marginBottom: 12
-                        }}>
-                          <span className="login-spinner" style={{ width: 14, height: 14, borderWidth: 2 }}></span>
-                          <span>{t(lang, "भुगतान प्रतीक्षा में... सर्वर लाइव जांच कर रहा है", "Waiting for payment... Server polling live")}</span>
-                        </div>
-
-                        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
-                            <span style={{ color: "#64748b" }}>{t(lang, "मर्चेंट (Merchant):", "Merchant:")}</span>
-                            <span style={{ fontWeight: 800, color: "#1e293b" }}>{pnbOrder.merchantName}</span>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
-                            <span style={{ color: "#64748b" }}>{t(lang, "UPI VPA:", "UPI VPA:")}</span>
-                            <span style={{ fontWeight: 800, color: "#1e293b" }}>{pnbOrder.merchantVpa}</span>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", marginBottom: 6 }}>
-                            <span style={{ color: "#64748b" }}>{t(lang, "ऑर्डर संदर्भ (Order Ref):", "Order Ref:")}</span>
-                            <code style={{ fontWeight: 800, color: "#2563eb", background: "#eff6ff", padding: "1px 5px", borderRadius: 4 }}>{pnbOrder.orderId}</code>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", borderTop: "1px dashed #e2e8f0", paddingTop: 6 }}>
-                            <span style={{ color: "#64748b", fontWeight: 700 }}>{t(lang, "सटीक देय राशि:", "Payable Amount:")}</span>
-                            <span style={{ fontWeight: 900, color: "#166534", fontSize: "1.05rem" }}>₹{pnbOrder.amount}</span>
-                          </div>
-                        </div>
-
-                        {/* Mobile Direct UPI Intent Link */}
-                        <div style={{ marginBottom: 10 }}>
-                          <a
-                            href={pnbOrder.qrString}
-                            className="btn btn-primary"
-                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 14px", fontWeight: 800, textDecoration: "none" }}
-                          >
-                            <span>📱</span>
-                            <span>{t(lang, "मोबाइल UPI ऐप से भुगतान करें", "Pay via Mobile UPI App")}</span>
-                          </a>
-                        </div>
-
-                        {/* Sandbox / Test Mode Simulation Button */}
-                        {pnbOrder.testMode && (
-                          <div style={{ marginTop: 8 }}>
-                            <button
-                              type="button"
-                              onClick={handleSimulatePnbPayment}
-                              disabled={pnbSimulating}
-                              style={{
-                                width: "100%",
-                                background: "#fef3c7",
-                                border: "1px dashed #d97706",
-                                color: "#92400e",
-                                padding: "8px 12px",
-                                borderRadius: 8,
-                                fontSize: "0.8rem",
-                                fontWeight: 800,
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                gap: 6
-                              }}
-                            >
-                              <span>⚡</span>
-                              <span>{pnbSimulating ? t(lang, "सिमुलेशन जारी...", "Simulating...") : t(lang, "परीक्षण भुगतान सिमुलेट करें (Sandbox Demo)", "Simulate Instant UPI Payment (Sandbox Demo)")}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-                          <button
-                            type="button"
-                            onClick={handleGeneratePnbQr}
-                            disabled={pnbGenerating}
-                            style={{ background: "none", border: "none", color: "#64748b", fontSize: "0.76rem", cursor: "pointer", textDecoration: "underline" }}
-                          >
-                            🔄 {t(lang, "नया QR कोड पुनः जनरेट करें", "Regenerate QR Code")}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB CONTENT B: RAZORPAY CHECKOUT */}
-              {paymentGatewayType === "razorpay" && (
-                <div style={{
-                  border: "2px solid #2563eb",
-                  borderRadius: 14,
-                  padding: 20,
-                  background: "#ffffff"
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                    <div>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#1e3a8a" }}>
-                        💳 Razorpay Gateway Payment
-                      </div>
-                      <div style={{ fontSize: "0.82rem", color: "#64748b", marginTop: 2 }}>
-                        {t(lang, `देय सदस्यता शुल्क: ₹${fee} (${pricingInfo.remainingMonths} माह @ ₹50/माह)`, `Payable Membership Fee: ₹${fee} (${pricingInfo.remainingMonths} months @ ₹50/mo)`)}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#dbeafe", color: "#1e40af", padding: "4px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
-                      <span>🔒</span>
-                      <span>HMAC-SHA256 Secured</span>
-                    </div>
-                  </div>
-
-                  <div style={{ background: "#f8fafc", borderRadius: 10, padding: "12px 14px", border: "1px solid #e2e8f0", marginBottom: 16 }}>
-                    <div style={{ fontSize: "0.82rem", color: "#334155", fontWeight: 700, marginBottom: 4 }}>
-                      ✓ {t(lang, "समर्थित भुगतान माध्यम:", "Supported Payment Options:")}
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: "0.76rem", color: "#475569" }}>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Google Pay</span>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>PhonePe</span>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Paytm UPI</span>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>BHIM UPI</span>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Debit / Credit Cards (RuPay, Visa, MC)</span>
-                      <span style={{ background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>Net Banking</span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="btn btn-accent btn-lg"
-                    disabled={payingRazorpay || busy || !emailVerified}
-                    onClick={handleRazorpayCheckout}
-                    style={{
-                      width: "100%",
-                      padding: "14px 20px",
-                      fontSize: "1.08rem",
-                      fontWeight: 900,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 10,
-                      boxShadow: "0 4px 14px rgba(245, 158, 11, 0.35)",
-                      cursor: emailVerified ? "pointer" : "not-allowed",
-                      opacity: emailVerified ? 1 : 0.65
-                    }}
-                  >
-                    {payingRazorpay ? (
-                      <>
-                        <span className="login-spinner"></span>
-                        <span>{t(lang, "रेज़रपे सुरक्षित चेकआउट लोड हो रहा है...", "Launching Razorpay Secure Checkout...")}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>💳</span>
-                        <span>{t(lang, `₹${fee} रेज़रपे द्वारा भुगतान करें एवं सदस्यता सक्रिय करें`, `Pay ₹${fee} via Razorpay & Activate Membership`)}</span>
-                      </>
-                    )}
-                  </button>
-
-                  {!emailVerified && (
-                    <div style={{ marginTop: 10, fontSize: "0.82rem", color: "#b45309", fontWeight: 700, textAlign: "center" }}>
-                      ⚠️ {t(lang, "भुगतान से पूर्व कृपया ऊपर फॉर्म में 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above before proceeding to Razorpay checkout.")}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB CONTENT B: MANUAL UPI PAYMENT BOX */}
-              {paymentGatewayType === "manual_upi" && (
-                <div className="join-pay-box" style={{
-                  border: `2px solid ${utrNumber.trim().length >= 6 ? "#16a34a" : "#f59e0b"}`,
-                  borderRadius: 14,
-                  padding: 18,
-                  background: "#ffffff"
-                }}>
-                  <div className="join-pay-qr-wrap" dangerouslySetInnerHTML={{ __html: qrSvg(upi, 120) }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-                      <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "var(--primary)" }}>
-                        💳 {t(lang, "देय सदस्यता शुल्क", "Membership Fee Due")}: ₹{fee}
-                      </div>
-                      <span style={{ background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 12, fontSize: "0.78rem", fontWeight: 800 }}>
-                        ⚡ {t(lang, "कैलेंडर वर्ष सदस्यता", "Calendar Year Membership")}
-                      </span>
-                    </div>
-
-                    <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 2 }}>
-                      UPI ID: <b style={{ color: "var(--primary)" }}>{s.upiId}</b>
-                    </div>
-                    <div style={{ fontSize: "0.86rem", color: "#475569", fontWeight: 700, marginBottom: 12 }}>
-                      {t(lang, "बैंक खाता", "Bank Account")}: <b>{s.bankAccountNumber} ({s.bankIfsc})</b>
-                    </div>
-
-                    {/* Payment Mode Selector */}
-                    <div style={{ marginBottom: 10 }}>
-                      <label style={{ fontSize: "0.82rem", fontWeight: 800, color: "var(--text)", marginBottom: 4, display: "block" }}>
-                        {t(lang, "भुगतान का माध्यम (Payment Mode) *", "Payment Mode *")}
-                      </label>
-                      <select
-                        className="form-control"
-                        value={paymentMode}
-                        onChange={(e) => setPaymentMode(e.target.value)}
-                        style={{ fontWeight: 700 }}
-                      >
-                        <option value="UPI">UPI (Google Pay / PhonePe / Paytm / BHIM)</option>
-                        <option value="PhonePe">PhonePe</option>
-                        <option value="Google Pay">Google Pay (GPay)</option>
-                        <option value="Paytm">Paytm</option>
-                        <option value="Net Banking">Net Banking / IMPS / NEFT</option>
-                      </select>
-                    </div>
-
-                    {/* 12-Digit UTR Input */}
-                    <div style={{ marginBottom: 10 }}>
-                      <label style={{ fontSize: "0.82rem", fontWeight: 800, color: "var(--text)", marginBottom: 4, display: "block" }}>
-                        {t(lang, "12-अंकीय UTR / Transaction No *", "12-digit UTR / Transaction Ref No *")}
-                      </label>
-                      <input
-                        className={`form-control ${errors.utr ? "is-invalid" : ""}`}
-                        name="utrNumber"
-                        value={utrNumber}
-                        onChange={(e) => {
-                          setUtrNumber(e.target.value);
-                          if (errors.utr) setErrors((prev) => ({ ...prev, utr: "" }));
-                        }}
-                        placeholder={t(lang, "उदा: 412345678901 (12 अंक)", "e.g. 412345678901 (12 digits)")}
-                        required={paymentGatewayType === "manual_upi"}
-                        style={{ fontWeight: 800, letterSpacing: 1 }}
-                      />
-                      {errors.utr && (
-                        <div style={{ color: "var(--danger)", fontSize: "0.8rem", fontWeight: 700, marginTop: 4 }}>
-                          {errors.utr}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Optional Screenshot Upload */}
-                    <div>
-                      <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748b", marginBottom: 4, display: "block" }}>
-                        {t(lang, "भुगतान रसीद / स्क्रीनशॉट (वैकल्पिक)", "Payment Receipt Screenshot (Optional)")}
-                      </label>
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.png,image/*"
-                        onChange={handleReceiptProofChange}
-                        disabled={uploadingReceipt}
-                      />
-                      {receiptProofUrl && (
-                        <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: 700, marginTop: 4, display: "block" }}>
-                          ✓ {t(lang, "रसीद स्क्रीनशॉट संलग्न किया गया", "Receipt screenshot attached")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Terms and Conditions */}
-            <div className="form-group full" style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: 16, marginTop: 4, background: "#f8fafc" }}>
-              <div style={{ fontSize: "0.98rem", fontWeight: 900, color: "var(--primary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                📜 {t(lang, tc.titleHi || "सदस्यता नियम एवं शर्तें", tc.titleEn || "Membership Terms & Conditions")}
-              </div>
-              <div className="terms-scroll-box" style={{ maxHeight: 125, background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: 8, padding: "10px 14px", fontSize: "0.82rem", lineHeight: 1.65, color: "#334155" }}>
-                {t(lang, tc.contentHi, tc.contentEn)}
-              </div>
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: "0.85rem", fontWeight: 700, marginTop: 10, cursor: "pointer", color: "var(--text)" }}>
-                <input type="checkbox" name="acceptTerms" required style={{ marginTop: 3 }} />
-                <span>{t(lang, tc.checkboxLabelHi || "मैंने उत्तर प्रदेश बैंक मित्र संघ के उपरोक्त सभी नियम एवं शर्तें ध्यानपूर्वक पढ़ ली हैं और मैं इनसे पूर्णतः सहमत हूँ।", tc.checkboxLabelEn || "I have read and agree to all terms.")} *</span>
-              </label>
+        <form id="join-membership-form" className="card-panel" onSubmit={onSubmit} style={{ padding: "24px 26px", borderRadius: 16 }}>
+          <div style={{ marginBottom: 18 }}>
+            <h3 style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--primary)", margin: 0, fontSize: "1.12rem", fontWeight: 900 }}>
+              ✍️ {t(lang, "सदस्यता आवेदन पत्र (ऑनलाइन)", "Membership Application Form (Online)")}
+            </h3>
+            <div style={{ fontSize: "0.82rem", color: "#64748b", marginTop: 2 }}>
+              {t(lang, "उत्तर प्रदेश बैंक मित्र संघ, लखनऊ", "Uttar Pradesh Bank Mitra Sangh, Lucknow")}
             </div>
           </div>
 
-          {/* Validation warning if email or payment not ready */}
-          {!isFormReady && (
-            <div style={{
-              background: "#fffbeb",
-              border: "1px solid #fde68a",
-              borderRadius: 8,
-              padding: "10px 14px",
-              marginTop: 14,
-              fontSize: "0.85rem",
-              color: "#92400e",
-              fontWeight: 700,
+          <div style={{ display: "grid", gap: 18 }}>
+            {/* SECTION 1: Personal Details */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>1</span>
+                <span>{t(lang, "व्यक्तिगत विवरण (Personal Details)", "Personal Details")}</span>
+              </div>
+              <div className="form-grid">
+                <Field
+                  label={t(lang, "पूरा नाम (हिंदी में) *", "Full Name (Hindi) *")}
+                  name="nameHi"
+                  value={nameHi}
+                  placeholder={t(lang, "उदा: सुरेश चंद्र मौर्य", "e.g. सुरेश चंद्र मौर्य")}
+                  required
+                  error={errors.nameHi}
+                  onChange={handleNameChange("nameHi", setNameHi, "पूरा नाम (हिंदी)", "Hindi name")}
+                />
+                <Field
+                  label={t(lang, "पूरा नाम (अंग्रेज़ी में) *", "Full Name (English) *")}
+                  name="nameEn"
+                  value={nameEn}
+                  placeholder="e.g. Suresh Chandra Maurya"
+                  required
+                  error={errors.nameEn}
+                  onChange={handleNameChange("nameEn", setNameEn, "पूरा नाम (अंग्रेज़ी)", "English name")}
+                />
+                <Field
+                  label={t(lang, "पिता का नाम *", "Father's Name *")}
+                  name="fatherName"
+                  value={fatherName}
+                  placeholder={t(lang, "पिता का नाम", "Father's Name")}
+                  required
+                  error={errors.fatherName}
+                  onChange={handleNameChange("fatherName", setFatherName, "पिता का नाम", "Father's name")}
+                />
+                <Field
+                  label={t(lang, "उम्र (Age) *", "Age *")}
+                  name="age"
+                  type="number"
+                  min="18"
+                  max="90"
+                  value={age}
+                  placeholder="e.g. 34"
+                  required
+                  onChange={(e) => setAge(e.target.value)}
+                />
+                <Field
+                  label={t(lang, "मोबाइल नंबर (WhatsApp) *", "Mobile Number (WhatsApp) *")}
+                  name="mobile"
+                  value={mobile}
+                  placeholder="10-digit mobile number"
+                  required
+                  maxLength={10}
+                  error={errors.mobile}
+                  onChange={handleMobileInput}
+                />
+                {/* EMAIL VERIFICATION SECTION (MANDATORY OTP via Resend) */}
+                <div className="form-group full" style={{
+                  background: emailVerified ? "#f0fdf4" : "#f8fafc",
+                  border: `1.5px solid ${emailVerified ? "#16a34a" : "#cbd5e1"}`,
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  marginTop: 2
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: "0.92rem", color: emailVerified ? "#16a34a" : "var(--primary)" }}>
+                      ✉️ {t(lang, "ईमेल पता एवं OTP सत्यापन *", "Email Address & OTP Verification *")}
+                    </span>
+                    {emailVerified && (
+                      <span style={{ background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontSize: "0.76rem", fontWeight: 800 }}>
+                        ✓ {t(lang, "ईमेल सत्यापित (Verified)", "Email Verified")}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <input
+                      type="email"
+                      name="email"
+                      className={`form-control ${errors.email ? "is-invalid" : ""}`}
+                      placeholder="name@example.com"
+                      value={email}
+                      readOnly={emailVerified}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (emailOtpSent) setEmailOtpSent(false);
+                        setDevOtpNotice("");
+                        setErrors((prev) => ({ ...prev, email: "" }));
+                      }}
+                      required
+                      style={{ flex: "1 1 220px", backgroundColor: emailVerified ? "#f0fdf4" : "#ffffff" }}
+                    />
+
+                    {!emailVerified ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={emailSendingOtp || !email || emailCountdown > 0}
+                        onClick={handleSendEmailOtp}
+                        style={{ whiteSpace: "nowrap", minWidth: 125 }}
+                      >
+                        {emailSendingOtp
+                          ? t(lang, "भेज रहे हैं...", "Sending...")
+                          : emailCountdown > 0
+                          ? `${t(lang, "पुनः भेजें", "Resend")} (${emailCountdown}s)`
+                          : emailOtpSent
+                          ? t(lang, "पुनः OTP भेजें", "Resend OTP")
+                          : t(lang, "ओटीपी भेजें (Send OTP)", "Send OTP")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={handleResetEmail}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        ✏️ {t(lang, "ईमेल बदलें", "Change Email")}
+                      </button>
+                    )}
+                  </div>
+
+                  {errors.email && (
+                    <div style={{ color: "var(--danger)", fontSize: "0.82rem", fontWeight: 700, marginTop: 6 }}>
+                      {errors.email}
+                    </div>
+                  )}
+
+                  {devOtpNotice && !emailVerified && (
+                    <div style={{ marginTop: 8, padding: "6px 12px", background: "#fef3c7", border: "1px dashed #d97706", borderRadius: 8, fontSize: "0.82rem", color: "#92400e", fontWeight: 700 }}>
+                      ⚡ {devOtpNotice} ({t(lang, "परीक्षण हेतु यह कोड नीचे दर्ज करें", "Enter this code below for verification")})
+                    </div>
+                  )}
+
+                  {emailOtpSent && !emailVerified && (
+                    <div style={{ marginTop: 10, padding: 12, background: "#ffffff", borderRadius: 8, border: "1px solid #bfdbfe" }}>
+                      <div style={{ fontSize: "0.82rem", color: "#1e40af", fontWeight: 700, marginBottom: 8 }}>
+                        📩 {t(lang, `आपके ईमेल (${email}) पर 6-अंकीय सत्यापन कोड भेजा गया है। कोड दर्ज करें:`, `A 6-digit verification code was sent to ${email}. Enter code:`)}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={emailOtp}
+                          onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder="6-Digit OTP"
+                          className="form-control"
+                          style={{ maxWidth: 200, fontSize: "1.05rem", letterSpacing: 3, fontWeight: 900, textAlign: "center" }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-accent"
+                          disabled={emailVerifyingOtp || emailOtp.length !== 6}
+                          onClick={handleVerifyEmailOtp}
+                          style={{ whiteSpace: "nowrap", padding: "9px 18px", fontWeight: 800 }}
+                        >
+                          {emailVerifyingOtp ? t(lang, "सत्यापित कर रहे हैं...", "Verifying...") : `✓ ${t(lang, "सत्यापित करें (Verify)", "Verify OTP")}`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <label className="form-group full">
+                  <span>{t(lang, "स्थानीय निजी पता *", "Local Private Address *")}</span>
+                  <textarea
+                    className="form-control"
+                    name="localAddress"
+                    rows={2}
+                    value={localAddress}
+                    onChange={(e) => setLocalAddress(e.target.value)}
+                    placeholder={t(lang, "मकान नं., मोहल्ला, ग्राम/शहर, जनपद, पिन कोड", "House no., locality, village/city, district, PIN code")}
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  <span>{t(lang, "जनपद *", "District *")}</span>
+                  <select className="form-control" name="district" required>
+                    {state.meta.districts.map((d) => <option key={d} value={d}>{localizeDual(d, lang)}</option>)}
+                  </select>
+                </label>
+                <Field
+                  label={t(lang, "केंद्र का पता (ब्लॉक) *", "Center Address (Block) *")}
+                  name="block"
+                  placeholder="e.g. Hazratganj, Lucknow — CSC Center"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* SECTION 2: Bank & KO Details */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>2</span>
+                <span>{t(lang, "बैंक व केओ विवरण (Bank & KO Details)", "Bank & KO Details")}</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-group" style={{ margin: 0 }}>
+                    <span>{t(lang, "संबद्ध बैंक *", "Sponsor Bank *")}</span>
+                    <select
+                      className="form-control"
+                      name="bankName"
+                      value={selectedBank}
+                      onChange={(e) => setSelectedBank(e.target.value)}
+                      required
+                    >
+                      {state.meta.banks.map((b) => <option key={b} value={b}>{b}</option>)}
+                      <option value="__other__">{t(lang, "अन्य (Others — स्वयं लिखें)", "Others (Specify)")}</option>
+                    </select>
+                  </label>
+                  {selectedBank === "__other__" && (
+                    <input
+                      className="form-control"
+                      style={{ marginTop: 8 }}
+                      value={customBank}
+                      onChange={(e) => setCustomBank(e.target.value)}
+                      placeholder={t(lang, "अपना बैंक नाम दर्ज करें *", "Enter Bank Name *")}
+                      required
+                    />
+                  )}
+                </div>
+                <div className="form-group">
+                  <Field
+                    label={t(lang, "KO CODE *", "KO CODE *")}
+                    name="koCode"
+                    placeholder="E.G. SBI-KNP-5501"
+                    required
+                  />
+                  <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: 3 }}>
+                    {t(lang, "कोड हमेशा अंग्रेज़ी में लिखा जाता है।", "Code is always written in English.")}
+                  </div>
+                </div>
+                <div className="form-group full">
+                  <label className="form-group" style={{ margin: 0 }}>
+                    <span>{t(lang, "कॉर्पोरेट बीसी कंपनी", "Corporate BC Company")}</span>
+                    <select
+                      className="form-control"
+                      name="bcCompany"
+                      value={selectedBc}
+                      onChange={(e) => setSelectedBc(e.target.value)}
+                    >
+                      {state.meta.bcCompanies.map((c) => <option key={c} value={c}>{c}</option>)}
+                      <option value="__other__">{t(lang, "अन्य (Others — स्वयं लिखें)", "Others (Specify)")}</option>
+                    </select>
+                  </label>
+                  {selectedBc === "__other__" && (
+                    <input
+                      className="form-control"
+                      style={{ marginTop: 8 }}
+                      value={customBc}
+                      onChange={(e) => setCustomBc(e.target.value)}
+                      placeholder={t(lang, "अपनी बीसी कंपनी का नाम दर्ज करें *", "Enter Corporate BC Company Name *")}
+                      required
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 3: Livelihood Details */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>3</span>
+                <span>{t(lang, "जीविका वृत्ति सम्बन्धी विवरण (Livelihood Details)", "Livelihood Details")}</span>
+              </div>
+              <div className="form-grid">
+                <div className="form-group full">
+                  <Field
+                    label={t(lang, "(1) संस्था या मालिक का नाम जिनके कर्मचारी हो", "(1) Institution / Owner Name")}
+                    name="livelihoodInstitution"
+                    placeholder="e.g. State Bank of India / CSC e-Governance"
+                  />
+                </div>
+                <Field
+                  label={t(lang, "(2) कार्य में पद", "(2) Designation at Work")}
+                  name="livelihoodDesignation"
+                  placeholder="e.g. Bank Mitra / CSP"
+                />
+                <Field
+                  label={t(lang, "(3) नौकरी/कार्य की अवधि", "(3) Duration")}
+                  name="livelihoodDuration"
+                  placeholder="e.g. 3 years"
+                />
+                <Field
+                  label={t(lang, "(4) मासिक/दैनिक वेतन", "(4) Monthly / Daily Remuneration")}
+                  name="livelihoodRemuneration"
+                  placeholder="e.g. Rs. 8,000 per month"
+                />
+                <Field
+                  label={t(lang, "तारीख (Date)", "Date")}
+                  name="applicationDate"
+                  type="date"
+                  value={applicationDate}
+                  onChange={(e) => setApplicationDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* SECTION 4: Photo & Signature Upload */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>4</span>
+                <span>{t(lang, "फोटो व हस्ताक्षर अपलोड (Photo & Signature Upload)", "Photo & Signature Upload")}</span>
+              </div>
+              <div className="form-grid">
+                <label className="form-group">
+                  <span>{t(lang, "पासपोर्ट साइज फोटो *", "Passport Size Photo *")}</span>
+                  <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={handlePassportPhotoChange} required={!photoUrl} />
+                  {photoUrl && (
+                    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                      <img src={photoUrl} alt="Preview" style={{ width: 52, height: 64, objectFit: "cover", borderRadius: 6, border: "2px solid #0a2252" }} />
+                      <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 700 }}>✓ {t(lang, "फोटो अपलोड", "Uploaded")}</span>
+                    </div>
+                  )}
+                  {errors.photo && <div style={{ color: "var(--danger)", fontSize: "0.8rem", fontWeight: 700, marginTop: 4 }}>{errors.photo}</div>}
+                </label>
+
+                <label className="form-group">
+                  <span>{t(lang, "प्रार्थी के हस्ताक्षर / अंगूठे का निशान (Image) *", "Signature / Thumb Impression (Image) *")}</span>
+                  <input type="file" accept=".jpg,.jpeg,.png,image/*" onChange={handleSignatureChange} required={!signatureUrl} />
+                  {signatureUrl && (
+                    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                      <img src={signatureUrl} alt="Signature" style={{ height: 40, objectFit: "contain", borderRadius: 6, border: "1px solid #cbd5e1", padding: 2, background: "#fff" }} />
+                      <span style={{ fontSize: "0.8rem", color: "#16a34a", fontWeight: 700 }}>✓ {t(lang, "हस्ताक्षर अपलोड", "Uploaded")}</span>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            {/* SECTION 5: Membership Category & Fee */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>5</span>
+                <span>{t(lang, "सदस्यता श्रेणी व शुल्क (Membership Category & Fee)", "Membership Category & Fee")}</span>
+              </div>
+              <label className="form-group" style={{ marginBottom: 10 }}>
+                <span>{t(lang, "सदस्यता श्रेणी *", "Membership Category *")}</span>
+                <select className="form-control" name="memberCategory" value={memberCategory} onChange={(e) => setMemberCategory(e.target.value)} required>
+                  <option value={singleCategoryEn}>{t(lang, singleCategoryHi, singleCategoryEn)}</option>
+                </select>
+                <span style={{ fontSize: "0.74rem", color: "#64748b", marginTop: 3 }}>
+                  {t(lang, "श्रेणी और इसका शुल्क एडमिन पैनल से नियंत्रित होते हैं।", "Category and its label are controlled from the Admin Panel.")}
+                </span>
+              </label>
+
+              <div style={{
+                background: "#f0fdf4",
+                border: "1.5px solid #86efac",
+                borderRadius: 10,
+                padding: "12px 16px"
+              }}>
+                <div style={{ fontWeight: 900, fontSize: "1.02rem", color: "#065f46" }}>
+                  {t(lang, `देय सदस्यता शुल्क: ₹${pricingInfo.price}`, `Payable Membership Fee: ₹${pricingInfo.price}`)}
+                </div>
+                <div style={{ fontSize: "0.84rem", color: "#047857", marginTop: 2 }}>
+                  {t(lang, pricingInfo.descriptionHi, pricingInfo.descriptionEn)}
+                </div>
+                <div style={{ fontSize: "0.8rem", color: "#b45309", fontWeight: 800, marginTop: 3 }}>
+                  {t(lang, `वैधता: ${pricingInfo.validityDisplayHi}`, `Valid until: ${pricingInfo.validityDisplayEn}`)}
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 6: Payment Details */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>6</span>
+                <span>{t(lang, "भुगतान विवरण (Payment Details)", "Payment Details")}</span>
+              </div>
+
+              {/* TAB CONTENT B: MANUAL UPI PAYMENT BOX (matches Image 7) */}
+              {paymentGatewayType === "manual_upi" && (
+                <div style={{
+                  background: "#fffbeb",
+                  border: "1.5px solid #fde68a",
+                  borderRadius: 12,
+                  padding: "16px",
+                  display: "flex",
+                  gap: 18,
+                  alignItems: "center",
+                  flexWrap: "wrap"
+                }}>
+                  {s.qrShowInMembership !== false && (
+                    <div style={{ textAlign: "center" }}>
+                      {s.qrSource === "upload" && s.qrImageUrl ? (
+                        <img src={s.qrImageUrl} alt="Payment QR" style={{ width: 180, height: 180, objectFit: "contain", background: "#fff", padding: 6, borderRadius: 10, border: "1px solid #cbd5e1" }} />
+                      ) : (
+                        <div style={{ background: "#fff", padding: 8, borderRadius: 10, border: "1px solid #cbd5e1", display: "inline-block" }} dangerouslySetInnerHTML={{ __html: qrSvg(upi, 175) }} />
+                      )}
+                      <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#92400e", marginTop: 4, maxWidth: 130 }}>
+                        {t(lang, s.qrCaptionHi || "आधिकारिक भुगतान QR", s.qrCaptionEn || "Official Payment QR")}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: "0.86rem", color: "#1e293b", fontWeight: 700, marginBottom: 2 }}>
+                      <b>UPI ID:</b> <code style={{ background: "#fef3c7", padding: "1px 6px", borderRadius: 4 }}>{s.upiId}</code>
+                    </div>
+                    <div style={{ fontSize: "0.86rem", color: "#1e293b", fontWeight: 700, marginBottom: 10 }}>
+                      <b>{t(lang, "बैंक खाता:", "Bank A/c:")}</b> {s.bankAccountNumber} ({s.bankIfsc})
+                    </div>
+                    <input
+                      className="form-control"
+                      name="utrNumber"
+                      value={utrNumber}
+                      onChange={(e) => setUtrNumber(e.target.value)}
+                      placeholder={t(lang, "12-अंकीय UPI UTR नंबर दर्ज करें", "12-digit UPI UTR number")}
+                      style={{ background: "#ffffff", fontWeight: 700 }}
+                    />
+                    <div style={{ fontSize: "0.74rem", color: "#64748b", marginTop: 4 }}>
+                      {t(lang, "भुगतान के बाद UTR दर्ज करें। एडमिन सत्यापन के बाद रसीद जारी की जाती है।", "Enter the UTR after payment. Receipt is issued after admin verification.")}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 7: Terms & Conditions (matches Image 7 & 8) */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>7</span>
+                <span>{t(lang, "नियम एवं शर्तें (Terms & Conditions)", "Terms & Conditions")}</span>
+              </div>
+              <div style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: "12px 14px", background: "#f8fafc" }}>
+                <div style={{ fontSize: "0.9rem", fontWeight: 900, color: "var(--primary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  📜 {t(lang, tc.titleHi || "सदस्यता नियम एवं शर्तें", tc.titleEn || "Membership Terms & Conditions")}
+                </div>
+                <div className="terms-scroll-box" style={{ maxHeight: 120, background: "#ffffff", border: "1px solid #cbd5e1", borderRadius: 8, padding: "10px 14px", fontSize: "0.82rem", lineHeight: 1.65, color: "#334155" }}>
+                  {t(lang, tc.contentHi, tc.contentEn)}
+                </div>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: "0.84rem", fontWeight: 700, marginTop: 10, cursor: "pointer", color: "var(--text)" }}>
+                  <input type="checkbox" name="acceptTerms" required style={{ marginTop: 3 }} />
+                  <span>{t(lang, tc.checkboxLabelHi || "मैंने उत्तर प्रदेश बैंक मित्र संघ के उपरोक्त सभी नियम एवं शर्तें ध्यानपूर्वक पढ़ ली हैं और मैं इनसे पूर्णतः सहमत हूँ।", tc.checkboxLabelEn || "I have carefully read and agree to abide by all the Terms & Conditions of Uttar Pradesh Bank Mitra Sangh.")} *</span>
+                </label>
+              </div>
+            </div>
+
+            {/* SECTION 8: Member Login Password (matches Image 8) */}
+            <div style={{ border: "1.5px solid #e2e8f0", borderRadius: 14, padding: "16px 18px", background: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 10, marginBottom: 14, borderBottom: "1.5px dashed #cbd5e1", fontWeight: 900, color: "var(--primary)", fontSize: "0.95rem" }}>
+                <span style={{ background: "#2563eb", color: "#fff", width: 20, height: 20, borderRadius: 4, display: "inline-grid", placeItems: "center", fontSize: "0.75rem" }}>8</span>
+                <span>{t(lang, "सदस्य लॉगिन पासवर्ड (Member Login Password)", "Member Login Password")}</span>
+              </div>
+              <Field
+                label={t(lang, "लॉगिन पासवर्ड बनाएँ *", "Create Login Password *")}
+                name="password"
+                type="password"
+                placeholder={t(lang, "न्यूनतम 4 अक्षर", "Minimum 4 characters")}
+                required
+                minLength={4}
+              />
+              <div style={{ fontSize: "0.76rem", color: "#64748b", marginTop: 4 }}>
+                {t(lang, "सदस्य लॉगिन के लिए इस मोबाइल नंबर और पासवर्ड का उपयोग करें।", "Use this mobile number and password for Member Login.")}
+              </div>
+            </div>
+          </div>
+
+          {/* Submit Button (matches Image 8) */}
+          <button
+            type="submit"
+            className="btn btn-accent btn-lg"
+            disabled={busy}
+            style={{
+              width: "100%",
+              marginTop: 18,
+              padding: "13px 20px",
+              fontSize: "1.02rem",
+              fontWeight: 900,
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: 8
-            }}>
-              <span>⚠️</span>
-              <div>
-                {!emailVerified && <div>• {t(lang, "कृपया ऊपर 'Send OTP' दबाकर अपना ईमेल सत्यापित करें।", "Please verify your email via OTP above.")}</div>}
-                {paymentGatewayType === "manual_upi" && utrNumber.trim().length < 6 && (
-                  <div>• {t(lang, `कृपया ₹${fee} शुल्क भुगतान का 12-अंकीय UTR नंबर दर्ज करें।`, `Please enter 12-digit UTR of your ₹${fee} fee payment.`)}</div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* If PNB Dynamic QR is selected, show status notice */}
-          {paymentGatewayType === "pnb_qr" && (
-            <div style={{
-              background: "#eff6ff",
-              border: "1px solid #bfdbfe",
-              borderRadius: 10,
-              padding: "12px 16px",
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              gap: 12
-            }}>
-              <span style={{ fontSize: "1.4rem" }}>🏛️</span>
-              <div style={{ fontSize: "0.85rem", color: "#1e40af" }}>
-                <b>{t(lang, "PNB डायनामिक QR भुगतान:", "PNB Dynamic QR Payment:")}</b>{" "}
-                {pnbOrder?.status === "PENDING"
-                  ? t(lang, "कृपया ऊपर दिए गए डायनामिक QR कोड को अपने मोबाइल UPI ऐप (Google Pay / PhonePe / Paytm / BHIM) से स्कैन कर भुगतान करें। सर्वर द्वारा पुष्टि होते ही आपकी सदस्यता सक्रिय हो जाएगी।", "Please scan the dynamic QR code above with any UPI app to complete payment. Membership will activate automatically.")
-                  : t(lang, "कृपया ऊपर दिए गए बॉक्स में 'PNB डायनामिक QR कोड जनरेट करें' बटन दबाकर भुगतान पूरा करें।", "Please click 'Generate PNB Dynamic QR' above to initiate instant UPI payment.")}
-              </div>
-            </div>
-          )}
-
-          {/* If manual UPI is selected, show submit button */}
-          {paymentGatewayType === "manual_upi" && (
-            <button
-              type="submit"
-              className="btn btn-accent btn-lg"
-              disabled={busy || !isFormReady}
-              style={{
-                width: "100%",
-                marginTop: 16,
-                padding: "13px 20px",
-                fontSize: "1.05rem",
-                fontWeight: 900,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                opacity: isFormReady ? 1 : 0.65,
-                cursor: isFormReady ? "pointer" : "not-allowed"
-              }}
-            >
-              {busy
-                ? t(lang, "पंजीकरण एवं सत्यापन जारी है...", "Processing registration & verification...")
-                : `✓ ${t(lang, "UTR सत्यापन स्वीकार कर सदस्यता पूर्ण करें", "Complete Verified Registration")}`}
-            </button>
-          )}
+            }}
+          >
+            {busy
+              ? t(lang, "आवेदन जमा हो रहा है...", "Submitting application...")
+              : `✅ ${t(lang, "सदस्यता आवेदन जमा करें (अनुमोदन हेतु)", "Submit Membership Application (for Approval)")}`}
+          </button>
         </form>
 
-        {/* Right Column: Sidebar Cards */}
+        {/* Right Column: Sidebar Cards (matches Image 5) */}
         <aside className="join-sidebar-col">
           <div className="join-sidebar-card join-benefits-card">
             <h4 className="join-sidebar-title">
-              📋 {t(lang, "पंजीकरण के साथ मिलने वाले लाभ व सुरक्षा नियम", "Registration Benefits & Safety Guidelines")}
+              🪪 {t(lang, "सदस्यता प्रपत्र एवं सुरक्षा नीति", "Membership Documents & Security Policy")}
             </h4>
             <ul className="join-benefits-list">
               <li>
-                <b>{t(lang, "आधिकारिक पहचान पत्र:", "Official ID Card:")}</b>{" "}
-                {t(lang, "सदस्य लॉगिन के उपरांत पदाधिकारी हस्ताक्षर एवं मुहर सहित उपलब्ध।", "Available with officer signature and seal after login.")}
+                <b>{t(lang, "आधिकारिक पहचान पत्र:", "Official Identity Card:")}</b>{" "}
+                {t(lang, "अनुमोदन और सदस्य लॉगिन के बाद आधिकारिक मुहर व हस्ताक्षर सहित उपलब्ध।", "Available after approval and Member Login, with official seal & signature.")}
               </li>
               <li>
-                <b>{t(lang, "नियुक्ति / सदस्यता प्रमाण-पत्र:", "Appointment Certificate:")}</b>{" "}
-                {t(lang, "सुरक्षित सदस्य लॉगिन के बाद लेटरहेड पर जारी।", "Issued on official letterhead in secure member portal.")}
+                <b>{t(lang, "नियुक्ति / सदस्यता प्रमाण-पत्र:", "Appointment / Membership Certificate:")}</b>{" "}
+                {t(lang, "सुरक्षित सदस्य लॉगिन के बाद लेटरहेड पर जारी।", "Issued on official letterhead after secure Member Login.")}
               </li>
               <li>
-                <b>{t(lang, "सदस्यता शुल्क रसीद:", "Fee Receipt:")}</b>{" "}
-                {t(lang, "सदस्य लॉगिन के उपरांत आधिकारिक डिजिटल रसीद उपलब्ध।", "Official digital receipt available after member login.")}
+                <b>{t(lang, "सदस्यता फॉर्म PDF:", "Membership Form PDF:")}</b>{" "}
+                {t(lang, "आवेदन जमा करने पर आधिकारिक A4 PDF स्वतः तैयार होता है।", "An official A4 PDF is generated automatically on submission.")}
               </li>
             </ul>
           </div>
 
           <div className="join-sidebar-card join-recent-card">
             <h4 className="join-sidebar-title">
-              📜 {t(lang, "हालिया सदस्यता पंजीकरण सारांश", "Recent Membership Summary")}
+              📜 {t(lang, "हालिया सदस्यता पंजीकरण", "Recent Membership Registrations")}
             </h4>
             <div className="join-recent-list">
               {recentList.map((m, i) => (
@@ -2434,20 +1952,34 @@ export function DonatePage() {
 
         {/* Right Column */}
         <div className="donate-sidebar-col">
-          {/* Top Card: QR */}
-          <div className="card-panel" style={{ textAlign: "center" }}>
-            <h4 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--primary)", fontSize: "1.0rem", fontWeight: 800, marginBottom: 16 }}>
-              🏦 {t(lang, "स्कैन कर आधिकारिक खाते में सहयोग करें", "Scan to Contribute to Official Account")}
-            </h4>
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-              <div style={{ background: "#ffffff", padding: 10, borderRadius: 12, border: "1.5px solid #e2e8f0", display: "inline-block" }} dangerouslySetInnerHTML={{ __html: qrSvg(upi, 150) }} />
+          {/* Top Card: QR (uses Donation Bank/UPI/QR settings, falling back to Membership settings) */}
+          {s.donationQrShowInDonation !== false && (
+            <div className="card-panel" style={{ textAlign: "center" }}>
+              <h4 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--primary)", fontSize: "1.0rem", fontWeight: 800, marginBottom: 16 }}>
+                🏦 {t(lang, s.donationQrCaptionHi || "स्कैन कर आधिकारिक खाते में सहयोग करें", s.donationQrCaptionEn || "Scan to Contribute to Official Account")}
+              </h4>
+              <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+                {s.donationQrSource === "upload" && s.donationQrImageUrl ? (
+                  <img src={s.donationQrImageUrl} alt="Donation QR" style={{ width: 210, height: 210, objectFit: "contain", background: "#fff", padding: 10, borderRadius: 12, border: "1.5px solid #e2e8f0" }} />
+                ) : (
+                  <div
+                    style={{ background: "#ffffff", padding: 12, borderRadius: 12, border: "1.5px solid #e2e8f0", display: "inline-block" }}
+                    dangerouslySetInnerHTML={{
+                      __html: qrSvg(
+                        `upi://pay?pa=${encodeURIComponent(s.donationUpiId || s.upiId || "")}&pn=${encodeURIComponent(s.donationUpiPayeeName || s.upiPayeeName || "")}&cu=INR`,
+                        205
+                      )
+                    }}
+                  />
+                )}
+              </div>
+              <div style={{ fontSize: "0.88rem", lineHeight: 1.7, color: "#334155" }}>
+                <div style={{ fontWeight: 800, color: "var(--primary)" }}>UPI ID: {s.donationUpiId || s.upiId || "upbms.sangh@sbi"}</div>
+                <div style={{ fontWeight: 700, color: "#64748b" }}>{t(lang, "खाता नाम:", "Account Name:")} {s.donationBankAccountName || s.bankAccountName || "Uttar Pradesh Bank Mitra Sangh"}</div>
+                <div style={{ fontWeight: 700, color: "#64748b" }}>A/c No.: {s.donationBankAccountNumber || s.bankAccountNumber || "3984002100088412"} | IFSC: {s.donationBankIfsc || s.bankIfsc || "SBIN0000125"}</div>
+              </div>
             </div>
-            <div style={{ fontSize: "0.88rem", lineHeight: 1.7, color: "#334155" }}>
-              <div style={{ fontWeight: 800, color: "var(--primary)" }}>UPI ID: {s.upiId || "upbms.sangh@sbi"}</div>
-              <div style={{ fontWeight: 700, color: "#64748b" }}>{t(lang, "खाता नाम:", "Account Name:")} {s.bankAccountName || "Uttar Pradesh Bank Mitra Sangh"}</div>
-              <div style={{ fontWeight: 700, color: "#64748b" }}>A/c No.: {s.bankAccountNumber || "3984002100088412"} | IFSC: {s.bankIfsc || "SBIN0000125"}</div>
-            </div>
-          </div>
+          )}
 
           {/* Bottom Card: Contributor List */}
           <div className="card-panel">
@@ -2608,8 +2140,29 @@ export function VerifyPage() {
         </div>
       )}
 
-      {/* Centered lock panel matching Image 1 */}
-      {!personal && (
+      {/* Pending Approval Lock Panel for logged-in pending members */}
+      {!personal && session?.member && session.member.status !== "active" && (
+        <div className="verify-lock-panel" style={{ background: "#fefce8", border: "2px solid #fde047" }}>
+          <div style={{ fontSize: 52, lineHeight: 1, marginBottom: 14 }}>⏳</div>
+          <h3 style={{ color: "#854d0e", fontSize: "1.3rem", fontWeight: 900, marginBottom: 10 }}>
+            {session.member.status === "rejected"
+              ? t(lang, "आवेदन अस्वीकृत किया गया", "Application Rejected")
+              : t(lang, "कृपया अनुमोदन की प्रतीक्षा करें (Wait for Approval)", "Please Wait for Admin Approval")}
+          </h3>
+          <p style={{ color: "#713f12", fontSize: "0.95rem", maxWidth: 660, margin: "0 auto 20px", lineHeight: 1.6 }}>
+            {session.member.status === "rejected"
+              ? t(lang, "आपका सदस्यता आवेदन अस्वीकार कर दिया गया है। अधिक जानकारी के लिए राज्य कार्यालय से संपर्क करें।", "Your membership application has been rejected. Please contact the State Office for details.")
+              : t(
+                  lang,
+                  `नमस्ते ${t(lang, session.member.nameHi, session.member.nameEn)} (${session.member.memberCode}), आपका सदस्यता आवेदन सफलतापूर्वक प्राप्त हो गया है और राज्य कार्यालय (Level 1 / Level 2 Admin) के अनुमोदन हेतु लंबित है। अनुमोदन के बाद आपका पहचान पत्र, नियुक्ति पत्र एवं रसीद स्वतः अनलॉक हो जाएंगे।`,
+                  `Hello ${session.member.nameEn} (${session.member.memberCode}), your membership application has been received and is pending approval by the State Office (Admin). Once approved, your ID Card, Appointment Letter & Fee Receipt will unlock automatically.`
+                )}
+          </p>
+        </div>
+      )}
+
+      {/* Centered lock panel for visitors who are not logged in */}
+      {!personal && !session?.member && (
         <div className="verify-lock-panel">
           <div style={{ fontSize: 52, lineHeight: 1, marginBottom: 16 }}>🔒</div>
           <h3 style={{ color: "#0b1a30", fontSize: "1.25rem", fontWeight: 800, marginBottom: 12, lineHeight: 1.4, maxWidth: 720, margin: "0 auto 12px" }}>
@@ -3266,13 +2819,15 @@ function LoginModalContent({ modal, setModal, lang, showToast, persistSession, r
 }
 
 export function MembershipVerificationPage() {
-  const { state, lang, verifyId, setVerifyId, setRoute, setModal } = usePortal();
+  const { state, lang, verifyId, setVerifyId, verifyType } = usePortal();
   const s = state?.settings || {};
 
   // Auto-populate query from verifyId (set by QR scan URL param)
   const [query, setQuery] = useState(verifyId || "");
   const [member, setMember] = useState(null);
+  const [payment, setPayment] = useState(null);
   const [receipts, setReceipts] = useState([]);
+  const [docType, setDocType] = useState(verifyType || "idcard");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [searched, setSearched] = useState(false);
@@ -3281,24 +2836,29 @@ export function MembershipVerificationPage() {
   // Auto-search if verifyId is present on mount
   useEffect(() => {
     if (verifyId && verifyId.trim()) {
-      doLookup(verifyId.trim());
+      doLookup(verifyId.trim(), verifyType || "idcard");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verifyId]);
+  }, [verifyId, verifyType]);
 
-  async function doLookup(q) {
+  async function doLookup(q, typeOverride) {
     if (!q) return;
+    const requestedType = typeOverride || docType || "idcard";
     setLoading(true);
     setError("");
     setMember(null);
+    setPayment(null);
     setReceipts([]);
     setSearched(false);
     try {
-      const data = await api(`/api/verify/${encodeURIComponent(q)}`);
+      const data = await api(`/api/verify/${encodeURIComponent(q)}?type=${encodeURIComponent(requestedType)}`);
       setMember(data.member || null);
+      setPayment(data.payment || null);
       setReceipts(data.receipts || []);
+      setDocType(data.docType || requestedType);
     } catch (err) {
-      setError(err.message || t(lang, "इस आईडी / मोबाइल से कोई सदस्य नहीं मिला।", "No member found for this ID / mobile."));
+      setDocType(requestedType);
+      setError(err.message || t(lang, "इस आईडी / रसीद / मोबाइल से कोई रिकॉर्ड नहीं मिला।", "No record found for this ID / receipt / mobile."));
     } finally {
       setLoading(false);
       setSearched(true);
@@ -3309,11 +2869,18 @@ export function MembershipVerificationPage() {
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
+    const isReceiptQuery = /^UPBMS-RCP/i.test(q);
+    const nextType = isReceiptQuery ? "receipt" : "idcard";
+    setDocType(nextType);
     setVerifyId(q);
-    doLookup(q);
+    doLookup(q, nextType);
   }
 
+  const isReceiptMode = docType === "receipt";
+  const isLetterMode = docType === "letter";
   const isActive = member && member.status === "active";
+  const isReceiptVerified = isReceiptMode && payment && payment.status === "verified";
+  const isReceiptPending = isReceiptMode && payment && payment.status !== "verified";
   const orgName = s.orgNameHi || "उत्तर प्रदेश बैंक मित्र संघ";
   const orgNameEn = s.orgNameEn || "Uttar Pradesh Bank Mitra Sangh (UPBMS)";
   const regNo = s.regNo || "UP-REG-LKO-2024-8841";
@@ -3326,15 +2893,49 @@ export function MembershipVerificationPage() {
     } catch { return d; }
   }
 
-  const detailRows = member ? [
+  const detailRows = isReceiptMode && payment ? [
+    { icon: "🧾", labelHi: "रसीद संख्या", labelEn: "Receipt Number", value: payment.receiptNo || payment.id || "—" },
+    { icon: "🔗", labelHi: "ट्रांज़ैक्शन / UTR आईडी", labelEn: "Transaction / UTR ID", value: payment.utrNumber || "—" },
+    { icon: "₹", labelHi: "भुगतान राशि", labelEn: "Amount Paid", value: `₹${payment.amount || 0}`, highlight: "#0a2252" },
+    { icon: "📅", labelHi: "भुगतान दिनांक", labelEn: "Payment Date", value: fmtDate(payment.verifiedDate || payment.date || payment.createdAt) },
+    { icon: "💳", labelHi: "भुगतान माध्यम", labelEn: "Payment Mode", value: payment.mode || "UPI / Bank Transfer" },
+    { icon: "👤", labelHi: "भुगतानकर्ता / सदस्य", labelEn: "Member / Payer Name", value: t(lang, payment.payerName || member?.nameHi, payment.payerNameEn || member?.nameEn) || "—" },
+    { icon: "🪪", labelHi: "सदस्यता संख्या", labelEn: "Membership ID", value: payment.memberCode || member?.memberCode || "—" },
+    { icon: "🏛️", labelHi: "जनपद", labelEn: "District", value: localizeDual(payment.district || member?.district, lang) || "—" },
+    {
+      icon: isReceiptVerified ? "🟢" : "🟡",
+      labelHi: "भुगतान स्थिति",
+      labelEn: "Payment Status",
+      value: isReceiptVerified
+        ? t(lang, "सत्यापित (Verified)", "Verified")
+        : t(lang, "सत्यापन लंबित / निष्क्रिय", "Pending / Inactive"),
+      highlight: isReceiptVerified ? "#16a34a" : "#d97706"
+    }
+  ] : isLetterMode && member ? [
     { icon: "👤", labelHi: "सदस्य का नाम", labelEn: "Member Name", value: t(lang, member.nameHi, member.nameEn) },
-    { icon: "🪪", labelHi: "सदस्यता संख्या", labelEn: "Membership ID", value: member.memberCode || "—" },
+    { icon: "🪪", labelHi: "पंजीकरण / सदस्य संख्या", labelEn: "Registration Number", value: member.memberCode || "—" },
+    { icon: "🏷️", labelHi: "नियुक्ति पदनाम", labelEn: "Designation", value: t(lang, member.designationHi, member.designationEn) || member.role || "—" },
+    { icon: "📅", labelHi: "नियुक्ति दिनांक", labelEn: "Appointment Date", value: fmtDate(member.joinedDate || member.joinDate || member.createdAt) },
     { icon: "🏛️", labelHi: "जनपद", labelEn: "District", value: localizeDual(member.district, lang) || "—" },
     { icon: "🏘️", labelHi: "ब्लॉक/केंद्र", labelEn: "Block / Center", value: localizeDual(member.block, lang) || "—" },
-    { icon: "📅", labelHi: "पंजीकरण दिनांक", labelEn: "Registration Date", value: fmtDate(member.joinDate || member.createdAt) },
     { icon: "🏦", labelHi: "संबद्ध बैंक", labelEn: "Sponsor Bank", value: member.bankName || "—" },
     { icon: "🔑", labelHi: "केओ/सीएसपी कोड", labelEn: "KO / CSP Code", value: member.koCode || "—" },
-    { icon: "🏷️", labelHi: "पदनाम", labelEn: "Designation", value: t(lang, member.designationHi, member.designationEn) || member.role || "—" },
+    {
+      icon: isActive ? "🟢" : "🔴",
+      labelHi: "वर्तमान स्थिति",
+      labelEn: "Current Status",
+      value: isActive ? t(lang, "सक्रिय एवं प्रमाणित (Verified)", "Verified & Active") : t(lang, "निष्क्रिय / लंबित (Inactive)", "Inactive / Pending"),
+      highlight: isActive ? "#16a34a" : "#dc2626"
+    }
+  ] : member ? [
+    { icon: "👤", labelHi: "सदस्य का नाम", labelEn: "Member Name", value: t(lang, member.nameHi, member.nameEn) },
+    { icon: "🪪", labelHi: "पंजीकरण / सदस्य संख्या", labelEn: "Registration Number", value: member.memberCode || "—" },
+    { icon: "👨‍👦", labelHi: "पिता का नाम", labelEn: "Father's Name", value: member.fatherName || "—" },
+    { icon: "🏛️", labelHi: "जनपद", labelEn: "District", value: localizeDual(member.district, lang) || "—" },
+    { icon: "🏘️", labelHi: "ब्लॉक/केंद्र", labelEn: "Block / Center", value: localizeDual(member.block, lang) || "—" },
+    { icon: "🏦", labelHi: "संबद्ध बैंक", labelEn: "Sponsor Bank", value: member.bankName || "—" },
+    { icon: "🔑", labelHi: "केओ/सीएसपी कोड", labelEn: "KO / CSP Code", value: member.koCode || "—" },
+    { icon: "📅", labelHi: "पंजीकरण दिनांक", labelEn: "Registration Date", value: fmtDate(member.joinedDate || member.joinDate || member.createdAt) },
     {
       icon: isActive ? "🟢" : "🔴",
       labelHi: "सदस्यता स्थिति",
@@ -3345,6 +2946,12 @@ export function MembershipVerificationPage() {
       highlight: isActive ? "#16a34a" : "#dc2626"
     }
   ] : [];
+
+  const docTypeLabel = isReceiptMode
+    ? t(lang, "आधिकारिक शुल्क रसीद सत्यापन", "OFFICIAL FEE RECEIPT VERIFICATION")
+    : isLetterMode
+      ? t(lang, "आधिकारिक नियुक्ति पत्र सत्यापन", "OFFICIAL APPOINTMENT LETTER VERIFICATION")
+      : t(lang, "आधिकारिक पहचान पत्र सत्यापन", "OFFICIAL ID CARD VERIFICATION");
 
   return (
     <div className="verification-page-container">
@@ -3359,25 +2966,50 @@ export function MembershipVerificationPage() {
           <p className="verification-org-title">{orgName}</p>
           <p className="verification-org-subtitle">{orgNameEn}</p>
           <p className="verification-org-reg">Regd. No.: {regNo}</p>
+          <div style={{ marginTop: 10 }}>
+            <span style={{ display: "inline-block", background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,0.28)", color: "#fde68a", fontSize: "0.75rem", fontWeight: 800, padding: "4px 12px", borderRadius: 999, letterSpacing: "0.04em" }}>
+              {docTypeLabel}
+            </span>
+          </div>
         </div>
 
         {/* ── Status Badge ── */}
-        {searched && member && (
+        {searched && (isReceiptMode ? payment : member) && (
           <div className="verification-badge-strip">
-            {isActive ? (
+            {(isReceiptMode ? isReceiptVerified : isActive) ? (
               <div className="official-verify-badge-verified">
                 <div className="badge-shield-circle">✓</div>
                 <div>
-                  <div className="badge-verified-title">{t(lang, "सदस्यता सत्यापन सफल", "Membership Verified")}</div>
-                  <div className="badge-verified-sub">✅ VERIFIED ACTIVE MEMBER • सत्यापित सक्रिय सदस्य</div>
+                  <div className="badge-verified-title">
+                    {isReceiptMode
+                      ? t(lang, "शुल्क रसीद सत्यापित", "Fee Receipt Verified")
+                      : isLetterMode
+                        ? t(lang, "नियुक्ति पत्र सत्यापित", "Appointment Letter Verified")
+                        : t(lang, "पहचान पत्र एवं सदस्यता सत्यापित", "ID Card & Membership Verified")}
+                  </div>
+                  <div className="badge-verified-sub">
+                    {isReceiptMode
+                      ? "✅ VERIFIED PAYMENT RECEIPT • सत्यापित आधिकारिक रसीद"
+                      : isLetterMode
+                        ? "✅ VERIFIED APPOINTMENT LETTER • प्रमाणित नियुक्ति पत्र"
+                        : "✅ VERIFIED ACTIVE MEMBER • सत्यापित सक्रिय सदस्य"}
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="official-verify-badge-invalid">
-                <div className="badge-shield-circle" style={{ background: "#dc2626" }}>✕</div>
+              <div className="official-verify-badge-invalid" style={isReceiptPending ? { background: "#fffbeb", borderColor: "#f59e0b" } : undefined}>
+                <div className="badge-shield-circle" style={{ background: isReceiptPending ? "#d97706" : "#dc2626" }}>{isReceiptPending ? "!" : "✕"}</div>
                 <div>
-                  <div className="badge-verified-title" style={{ color: "#991b1b" }}>{t(lang, "सदस्यता असत्यापित / अमान्य", "Membership Invalid / Inactive")}</div>
-                  <div className="badge-verified-sub" style={{ color: "#7f1d1d" }}>⚠ INACTIVE MEMBER • निष्क्रिय सदस्य</div>
+                  <div className="badge-verified-title" style={{ color: isReceiptPending ? "#92400e" : "#991b1b" }}>
+                    {isReceiptPending
+                      ? t(lang, "रसीद सत्यापन लंबित / निष्क्रिय", "Receipt Pending / Inactive")
+                      : t(lang, "स्थिति निष्क्रिय / अमान्य", "Status Inactive / Invalid")}
+                  </div>
+                  <div className="badge-verified-sub" style={{ color: isReceiptPending ? "#b45309" : "#7f1d1d" }}>
+                    {isReceiptPending
+                      ? "⏳ PENDING ADMIN VERIFICATION • सत्यापन लंबित"
+                      : "⚠ INACTIVE RECORD • निष्क्रिय रिकॉर्ड"}
+                  </div>
                 </div>
               </div>
             )}
@@ -3385,37 +3017,61 @@ export function MembershipVerificationPage() {
         )}
 
         {/* ── Declaration Banner ── */}
-        {searched && member && isActive && (
+        {searched && (isReceiptMode ? isReceiptVerified : (member && isActive)) && (
           <div className="verify-declaration-banner">
-            <p className="declaration-text-hi">
-              "यह प्रमाणित किया जाता है कि यह व्यक्ति उत्तर प्रदेश बैंक मित्र संघ का पंजीकृत सदस्य है।"
-            </p>
-            <p className="declaration-text-en">
-              "This is to certify that this person is a registered member of Uttar Pradesh Bank Mitra Sangh (UPBMS)."
-            </p>
+            {isReceiptMode ? (
+              <>
+                <p className="declaration-text-hi">
+                  "यह प्रमाणित किया जाता है कि यह भुगतान रसीद उत्तर प्रदेश बैंक मित्र संघ के पोर्टल पर आधिकारिक रूप से दर्ज एवं सत्यापित है।"
+                </p>
+                <p className="declaration-text-en">
+                  "This is to certify that this fee receipt is officially recorded and verified on the Uttar Pradesh Bank Mitra Sangh (UPBMS) portal."
+                </p>
+              </>
+            ) : isLetterMode ? (
+              <>
+                <p className="declaration-text-hi">
+                  "यह प्रमाणित किया जाता है कि यह नियुक्ति / मनोनयन पत्र उत्तर प्रदेश बैंक मित्र संघ द्वारा आधिकारिक रूप से जारी किया गया है।"
+                </p>
+                <p className="declaration-text-en">
+                  "This is to certify that this Appointment Letter is officially issued by Uttar Pradesh Bank Mitra Sangh (UPBMS)."
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="declaration-text-hi">
+                  "यह प्रमाणित किया जाता है कि यह व्यक्ति उत्तर प्रदेश बैंक मित्र संघ का पंजीकृत सक्रिय सदस्य है।"
+                </p>
+                <p className="declaration-text-en">
+                  "This is to certify that this person is an active registered member of Uttar Pradesh Bank Mitra Sangh (UPBMS)."
+                </p>
+              </>
+            )}
           </div>
         )}
 
-        {/* ── Member Photo + Bio ── */}
-        {searched && member && (
+        {/* ── Member / Receipt Bio + Detail Grid ── */}
+        {searched && (isReceiptMode ? payment : member) && (
           <>
-            <div className="verify-member-bio-row">
-              <div className="verify-photo-box">
-                {member.photoUrl
-                  ? <img src={member.photoUrl} alt={t(lang, member.nameHi, member.nameEn)} />
-                  : <span style={{ fontSize: 42, opacity: 0.35 }}>👤</span>
-                }
-              </div>
-              <div className="verify-bio-content">
-                <h2 className="verify-member-name">{t(lang, member.nameHi, member.nameEn)}</h2>
-                <p className="verify-member-role">
-                  {t(lang, member.designationHi, member.designationEn) || member.role || t(lang, "बैंक मित्र सदस्य", "Bank Mitra Member")}
-                </p>
-                <div className="verify-code-pill">
-                  🪪 {member.memberCode}
+            {member && (
+              <div className="verify-member-bio-row">
+                <div className="verify-photo-box">
+                  {member.photoUrl
+                    ? <img src={member.photoUrl} alt={t(lang, member.nameHi, member.nameEn)} />
+                    : <span style={{ fontSize: 42, opacity: 0.35 }}>👤</span>
+                  }
+                </div>
+                <div className="verify-bio-content">
+                  <h2 className="verify-member-name">{t(lang, member.nameHi, member.nameEn)}</h2>
+                  <p className="verify-member-role">
+                    {t(lang, member.designationHi, member.designationEn) || member.role || t(lang, "बैंक मित्र सदस्य", "Bank Mitra Member")}
+                  </p>
+                  <div className="verify-code-pill">
+                    🪪 {isReceiptMode ? (payment?.receiptNo || member.memberCode) : member.memberCode}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* ── Detail Grid ── */}
             <div className="verify-details-grid">
@@ -3436,15 +3092,19 @@ export function MembershipVerificationPage() {
           </>
         )}
 
-        {/* ── Error / Not found ── */}
-        {searched && !member && (
+        {/* ── Error / Not found (Invalid) ── */}
+        {searched && (isReceiptMode ? !payment : !member) && (
           <div style={{ padding: "28px 24px", textAlign: "center" }}>
             <div style={{ fontSize: 54, marginBottom: 12 }}>❌</div>
             <h3 style={{ color: "#991b1b", fontWeight: 900, fontSize: "1.2rem", marginBottom: 8 }}>
-              {t(lang, "सदस्यता सत्यापन असफल", "Membership Verification Failed")}
+              {isReceiptMode
+                ? t(lang, "अमान्य शुल्क रसीद (Invalid Receipt)", "Invalid Fee Receipt")
+                : isLetterMode
+                  ? t(lang, "अमान्य नियुक्ति पत्र (Invalid Letter)", "Invalid Appointment Letter")
+                  : t(lang, "सदस्यता सत्यापन असफल (Invalid)", "Membership Verification Failed (Invalid)")}
             </h3>
             <p style={{ color: "#64748b", fontSize: "0.9rem", maxWidth: 480, margin: "0 auto 10px" }}>
-              {error || t(lang, "दर्ज की गई आईडी से कोई पंजीकृत सदस्य नहीं मिला।", "No registered member found for the entered ID.")}
+              {error || t(lang, "दर्ज की गई आईडी से कोई पंजीकृत रिकॉर्ड नहीं मिला।", "No registered record found for the entered ID.")}
             </p>
           </div>
         )}
@@ -3460,7 +3120,7 @@ export function MembershipVerificationPage() {
         {/* ── Search Bar ── */}
         <div style={{ padding: "20px 24px 24px", background: "#f8fafc", borderTop: "1.5px solid #e2e8f0" }} className="no-print">
           <p style={{ fontSize: "0.88rem", color: "#475569", fontWeight: 700, marginBottom: 10, textAlign: "center" }}>
-            🔍 {t(lang, "किसी अन्य सदस्य का सत्यापन करें — आईडी या मोबाइल नंबर दर्ज करें", "Verify another member — enter ID or mobile number")}
+            🔍 {t(lang, "किसी अन्य सदस्य या रसीद का सत्यापन करें — आईडी, रसीद संख्या या मोबाइल नंबर दर्ज करें", "Verify another member or receipt — enter ID, Receipt No, or mobile number")}
           </p>
           <form onSubmit={handleSearch} style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <input
@@ -3468,7 +3128,7 @@ export function MembershipVerificationPage() {
               style={{ flex: 1, minWidth: 200, height: 44 }}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={t(lang, "सदस्य आईडी / मोबाइल नंबर", "Member ID / Mobile Number")}
+              placeholder={t(lang, "सदस्य आईडी / रसीद संख्या / मोबाइल नंबर", "Member ID / Receipt No / Mobile Number")}
               required
             />
             <button type="submit" className="btn-verify-search" disabled={loading}>

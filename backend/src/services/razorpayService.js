@@ -24,20 +24,48 @@ const crypto = require("node:crypto");
  * December    1                  ₹50       Dec 1 – Dec 31
  * ─────────────────────────────────────────────────────────────────────────────
  */
-function calculateMembershipFee(date = new Date(), customRate = null) {
+function calculateMembershipFee(date = new Date(), settingsOrRate = null) {
   const now = new Date(date);
   const currentYear = now.getFullYear();
   // getMonth() returns 0 for Jan, 11 for Dec -> add 1 to get 1..12
   const currentMonth = now.getMonth() + 1;
 
-  // Formula: price = remainingMonths * ratePerMonth (default ₹50 or admin-configured)
-  const remainingMonths = Math.max(1, 13 - currentMonth);
-  const ratePerMonth = (customRate !== null && !isNaN(customRate) && Number(customRate) >= 0)
-    ? Number(customRate)
-    : 50;
-  const price = remainingMonths * ratePerMonth;
+  let entryFee = 10;
+  let ratePerMonth = 20;
+  let validityMode = "calendar_year";
+  let validityMonths = 12;
+
+  if (settingsOrRate && typeof settingsOrRate === "object") {
+    if (settingsOrRate.entryFee !== undefined && !isNaN(settingsOrRate.entryFee)) {
+      entryFee = Math.max(0, Number(settingsOrRate.entryFee));
+    }
+    if (settingsOrRate.monthlyMembershipFee !== undefined && !isNaN(settingsOrRate.monthlyMembershipFee)) {
+      ratePerMonth = Math.max(0, Number(settingsOrRate.monthlyMembershipFee));
+    }
+    if (settingsOrRate.validityMode) {
+      validityMode = settingsOrRate.validityMode;
+    }
+    if (settingsOrRate.validityMonths !== undefined && !isNaN(settingsOrRate.validityMonths)) {
+      validityMonths = Math.max(1, Number(settingsOrRate.validityMonths));
+    }
+  } else if (settingsOrRate !== null && !isNaN(settingsOrRate) && Number(settingsOrRate) >= 0) {
+    entryFee = 0;
+    ratePerMonth = Number(settingsOrRate);
+  }
+
+  let remainingMonths = Math.max(1, 13 - currentMonth);
+  let validUntil = `${currentYear}-12-31`;
+
+  if (validityMode === "months") {
+    remainingMonths = validityMonths;
+    const expiryDate = new Date(now);
+    expiryDate.setMonth(expiryDate.getMonth() + validityMonths);
+    validUntil = expiryDate.toISOString().slice(0, 10);
+  }
+
+  const subscriptionTotal = remainingMonths * ratePerMonth;
+  const price = entryFee + subscriptionTotal;
   const amountPaise = price * 100; // Razorpay operates in smallest currency unit (Paise)
-  const validUntil = `${currentYear}-12-31`;
 
   const monthNamesEn = [
     "January", "February", "March", "April", "May", "June",
@@ -57,16 +85,24 @@ function calculateMembershipFee(date = new Date(), customRate = null) {
     monthNameEn,
     monthNameHi,
     remainingMonths,
+    entryFee,
     ratePerMonth,
-    price, // Amount in ₹ INR
+    subscriptionTotal,
+    validityMode,
+    validityMonths,
+    price, // Total amount in ₹ INR
     amountPaise, // Amount in paise for Razorpay
-    validUntil, // Standard ISO format YYYY-12-31
-    validityDisplayEn: `${monthNameEn} 1 – Dec 31, ${currentYear}`,
-    validityDisplayHi: `1 ${monthNameHi} – 31 दिसंबर ${currentYear}`,
-    purposeEn: `Annual Membership Fee (${monthNameEn}–Dec ${currentYear})`,
-    purposeHi: `वार्षिक सदस्यता पंजीकरण शुल्क (${monthNameHi}–दिसंबर ${currentYear})`,
-    descriptionEn: `Calendar Year Membership (${remainingMonths} months @ ₹50/month = ₹${price})`,
-    descriptionHi: `कैलेंडर वर्ष सदस्यता शुल्क (${remainingMonths} माह @ ₹50/माह = ₹${price})`
+    validUntil, // Standard ISO format YYYY-12-31 or calculated date
+    validityDisplayEn: validityMode === "months"
+      ? `${remainingMonths} Months (Valid until ${validUntil})`
+      : `${validUntil} (Jan–Dec calendar year)`,
+    validityDisplayHi: validityMode === "months"
+      ? `${remainingMonths} माह (${validUntil} तक वैध)`
+      : `${validUntil} (जनवरी–दिसंबर कैलेंडर वर्ष)`,
+    purposeEn: `Membership Fee (Entry ₹${entryFee} + ${remainingMonths} mo × ₹${ratePerMonth})`,
+    purposeHi: `सदस्यता शुल्क (प्रवेश ₹${entryFee} + ₹${ratePerMonth} × ${remainingMonths} माह)`,
+    descriptionEn: `Entry fee ₹${entryFee} + Monthly subscription (₹${ratePerMonth} × ${remainingMonths} remaining month(s) = ₹${subscriptionTotal}) = Total ₹${price}`,
+    descriptionHi: `प्रवेश शुल्क ₹${entryFee} + मासिक चन्दा (₹${ratePerMonth} × ${remainingMonths} शेष माह = ₹${subscriptionTotal}) = कुल ₹${price}`
   };
 }
 

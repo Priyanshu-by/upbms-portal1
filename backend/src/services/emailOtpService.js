@@ -203,61 +203,69 @@ async function sendOtpEmail(toEmail, options = {}) {
     emailSubject = `[UPBMS] पासवर्ड रीसेट सत्यापन कोड (Password Reset OTP): ${otp}`;
   }
 
-  const transporter = createTransporter();
-
-  if (transporter) {
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; border: 1.5px solid #0a2252; border-radius: 14px; overflow: hidden; background: #ffffff;">
-        <div style="background: linear-gradient(135deg, #051331 0%, #0a2252 100%); color: #ffffff; padding: 24px; text-align: center;">
-          <h2 style="margin: 0; color: #ffd166; font-size: 1.35rem;">उत्तर प्रदेश बैंक मित्र संघ (UPBMS)</h2>
-          <p style="margin: 6px 0 0; font-size: 0.85rem; color: #f1f5f9;">Official Online Member Verification & Registration Portal</p>
-        </div>
-        <div style="padding: 28px 24px;">
-          <p style="font-size: 1rem; color: #0a2252; font-weight: 700; margin-top: 0;">
-            नमस्ते ${memberName},
-          </p>
-          <p style="font-size: 0.95rem; color: #334155; line-height: 1.5;">
-            ${emailHeadlineHi}
-          </p>
-          <div style="text-align: center; margin: 24px 0;">
-            <div style="display: inline-block; background: #f8fafc; border: 2.5px dashed #0a2252; border-radius: 12px; padding: 14px 32px; font-size: 2rem; font-weight: 900; letter-spacing: 8px; color: #0a2252; font-family: monospace;">
-              ${otp}
-            </div>
-          </div>
-          <p style="font-size: 0.85rem; color: #64748b; text-align: center; margin-bottom: 20px;">
-            ⚠️ यह कोड अगले <b>10 मिनट</b> के लिए मान्य है। कृपया यह कोड किसी के साथ साझा न करें।
-          </p>
-          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="font-size: 0.8rem; color: #94a3b8; line-height: 1.4; margin: 0; text-align: center;">
-            This is an automated security verification email from Uttar Pradesh Bank Mitra Sangh. If you did not request this code, please ignore this email.
-          </p>
-        </div>
+  // Build email HTML template once so Resend, Brevo, and SMTP share the exact same layout
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; border: 1.5px solid #0a2252; border-radius: 14px; overflow: hidden; background: #ffffff;">
+      <div style="background: linear-gradient(135deg, #051331 0%, #0a2252 100%); color: #ffffff; padding: 24px; text-align: center;">
+        <h2 style="margin: 0; color: #ffd166; font-size: 1.35rem;">उत्तर प्रदेश बैंक मित्र संघ (UPBMS)</h2>
+        <p style="margin: 6px 0 0; font-size: 0.85rem; color: #f1f5f9;">Official Online Member Verification & Registration Portal</p>
       </div>
-    `;
+      <div style="padding: 28px 24px;">
+        <p style="font-size: 1rem; color: #0a2252; font-weight: 700; margin-top: 0;">
+          नमस्ते ${memberName},
+        </p>
+        <p style="font-size: 0.95rem; color: #334155; line-height: 1.5;">
+          ${emailHeadlineHi}
+        </p>
+        <div style="text-align: center; margin: 24px 0;">
+          <div style="display: inline-block; background: #f8fafc; border: 2.5px dashed #0a2252; border-radius: 12px; padding: 14px 32px; font-size: 2rem; font-weight: 900; letter-spacing: 8px; color: #0a2252; font-family: monospace;">
+            ${otp}
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: #64748b; text-align: center; margin-bottom: 20px;">
+          ⚠️ यह कोड अगले <b>10 मिनट</b> के लिए मान्य है। कृपया यह कोड किसी के साथ साझा न करें।
+        </p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="font-size: 0.8rem; color: #94a3b8; line-height: 1.4; margin: 0; text-align: center;">
+          This is an automated security verification email from Uttar Pradesh Bank Mitra Sangh. If you did not request this code, please ignore this email.
+        </p>
+      </div>
+    </div>
+  `;
 
-    // 1. Try Brevo HTTP API (Port 443 - 100% reliable on Render free tier, no SMTP port blocks)
-    if (process.env.BREVO_API_KEY) {
-      try {
-        await sendViaBrevo(email, emailSubject, html);
-        console.log(`[EMAIL OTP (Brevo HTTPS)] Successfully dispatched OTP to ${email}`);
-        return { ok: true, devMode: false };
-      } catch (err) {
-        console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
-      }
+  // 1. PRIMARY: Resend REST API over HTTPS (Port 443 - works on Render Free Tier & locally)
+  const resendKey = String(process.env.RESEND_API_KEY || "").trim();
+  if (resendKey && !resendKey.includes("your_resend")) {
+    try {
+      await sendViaResend(email, emailSubject, html);
+      console.log(`[EMAIL OTP (Resend HTTPS)] Successfully dispatched OTP to ${email}`);
+      return { ok: true, devMode: false, provider: "resend" };
+    } catch (err) {
+      console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
+      return {
+        ok: true,
+        devMode: true,
+        otp,
+        warning: `Resend API Error: ${err.message}. Showing test OTP so you are not blocked.`
+      };
     }
+  }
 
-    // 2. Try Resend HTTP API (Port 443 - 100% reliable on Render free tier)
-    if (process.env.RESEND_API_KEY) {
-      try {
-        await sendViaResend(email, emailSubject, html);
-        console.log(`[EMAIL OTP (Resend HTTPS)] Successfully dispatched OTP to ${email}`);
-        return { ok: true, devMode: false };
-      } catch (err) {
-        console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
-      }
+  // 2. SECONDARY: Brevo HTTP API over HTTPS
+  const brevoKey = String(process.env.BREVO_API_KEY || "").trim();
+  if (brevoKey) {
+    try {
+      await sendViaBrevo(email, emailSubject, html);
+      console.log(`[EMAIL OTP (Brevo HTTPS)] Successfully dispatched OTP to ${email}`);
+      return { ok: true, devMode: false, provider: "brevo" };
+    } catch (err) {
+      console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
     }
+  }
 
-    // 3. Try Gmail Nodemailer SMTP (works locally, but Render Free Tier blocks outbound SMTP ports 465/587)
+  // 3. FALLBACK: Gmail Nodemailer SMTP (local dev / paid servers)
+  const transporter = createTransporter();
+  if (transporter) {
     const { user } = getSmtpCredentials();
     try {
       await transporter.sendMail({
@@ -266,47 +274,26 @@ async function sendOtpEmail(toEmail, options = {}) {
         subject: emailSubject,
         html
       });
-      console.log(`[EMAIL OTP] Successfully dispatched OTP to ${email}`);
-      return { ok: true, devMode: false };
+      console.log(`[EMAIL OTP (SMTP)] Successfully dispatched OTP to ${email}`);
+      return { ok: true, devMode: false, provider: "smtp" };
     } catch (err) {
       console.error("[EMAIL OTP] Transporter error:", err.message);
-      // Fallback: Return dev OTP so registration/reset doesn't block when Render blocks SMTP
       return {
         ok: true,
         devMode: true,
         otp,
-        warning: `Render Free Tier blocks SMTP ports 465/587 (${err.message}). Showing test OTP below. To send real emails, set BREVO_API_KEY or RESEND_API_KEY in Render dashboard.`
+        warning: `SMTP Error: ${err.message}. Showing test OTP below. Set RESEND_API_KEY for live email delivery.`
       };
     }
   }
 
-  // 4. Try Brevo / Resend even if Gmail is not configured
-  if (process.env.BREVO_API_KEY) {
-    try {
-      await sendViaBrevo(email, emailSubject, html);
-      console.log(`[EMAIL OTP (Brevo HTTPS)] Dispatched OTP to ${email}`);
-      return { ok: true, devMode: false };
-    } catch (err) {
-      console.error("[EMAIL OTP (Brevo HTTPS)] Error:", err.message);
-    }
-  }
-  if (process.env.RESEND_API_KEY) {
-    try {
-      await sendViaResend(email, emailSubject, html);
-      console.log(`[EMAIL OTP (Resend HTTPS)] Dispatched OTP to ${email}`);
-      return { ok: true, devMode: false };
-    } catch (err) {
-      console.error("[EMAIL OTP (Resend HTTPS)] Error:", err.message);
-    }
-  }
-
-  // If Gmail SMTP is not yet configured, log to console for development testing
+  // 4. DEV MODE FALLBACK
   console.log(`[EMAIL OTP (DEV MODE)] Generated OTP for ${email}: ${otp}`);
   return {
     ok: true,
     devMode: true,
     otp,
-    message: "Gmail credentials not set in .env. Dev OTP generated for testing."
+    message: "RESEND_API_KEY not set in .env. Dev OTP generated for testing."
   };
 }
 

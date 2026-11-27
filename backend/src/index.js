@@ -24,9 +24,14 @@ const {
   verifyWebhookSignature
 } = require("./services/razorpayService");
 
-// Helper to calculate membership pricing using admin-configurable monthly fee
+// Helper to calculate membership pricing using admin-configurable fee settings
 function getMembershipPricing(date = new Date()) {
-  return calculateMembershipFee(date, db.settings?.monthlyMembershipFee);
+  return calculateMembershipFee(date, {
+    entryFee: db.settings?.entryFee ?? 10,
+    monthlyMembershipFee: db.settings?.monthlyMembershipFee ?? 20,
+    validityMode: db.settings?.validityMode || "calendar_year",
+    validityMonths: db.settings?.validityMonths ?? 12
+  });
 }
 const {
   isPnbConfigured,
@@ -943,24 +948,66 @@ app.post("/api/members/:id/reset-password", requireAdmin, async (req, res) => {
 
 // --- USER MANAGEMENT (LEVEL 1 SUPER ADMIN ONLY) ---
 app.get("/api/users", requireSuperAdmin, (_req, res) => {
-  const users = db.members.map((m) => ({
-    id: m.id,
-    memberCode: m.memberCode,
-    username: m.username || "",
-    nameHi: m.nameHi,
-    nameEn: m.nameEn,
-    mobile: m.mobile,
-    email: m.email || "",
-    district: m.district,
-    bankName: m.bankName,
-    designationHi: m.designationHi,
-    designationEn: m.designationEn,
-    isCoreMember: Boolean(m.isCoreMember),
-    status: m.status,
-    level: Number(m.level) || (m.isCoreMember ? 2 : 3),
-    joinedDate: m.joinedDate
-  }));
+  const users = db.members.map((m) => sanitizeMemberPublic(m));
   res.json({ ok: true, users });
+});
+
+app.put("/api/users/:id/permissions", requireSuperAdmin, async (req, res) => {
+  const idx = db.members.findIndex((m) => m.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "User not found" });
+  const target = db.members[idx];
+  if (target.level === 1) {
+    return res.status(400).json({ ok: false, error: "Super Admin permissions cannot be restricted." });
+  }
+  const body = req.body || {};
+  if (body.level !== undefined) {
+    const lvl = Number(body.level);
+    if (lvl === 2 || lvl === 3) target.level = lvl;
+  }
+  if (body.status) target.status = String(body.status);
+  if (body.adminPermissions && typeof body.adminPermissions === "object") {
+    target.adminPermissions = { ...body.adminPermissions };
+  }
+  if (body.password && String(body.password).trim().length >= 4) {
+    target.password = String(body.password).trim();
+  }
+  await saveDb();
+  res.json({ ok: true, user: sanitizeMemberPublic(target) });
+});
+
+app.post("/api/users/subadmin", requireSuperAdmin, async (req, res) => {
+  const body = req.body || {};
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "").trim();
+  if (!username || password.length < 4) {
+    return res.status(400).json({ ok: false, error: "यूज़रनेम और कम से कम 4 अक्षर का पासवर्ड आवश्यक है। / Username and password (min 4 chars) required." });
+  }
+  const exists = db.members.find((m) => String(m.username || "").toLowerCase() === username.toLowerCase());
+  if (exists) {
+    return res.status(409).json({ ok: false, error: "यह यूज़रनेम पहले से मौजूद है। / Username already exists." });
+  }
+  const newSub = {
+    id: "subadmin-" + Date.now(),
+    memberCode: "UPBMS-ADM-" + String(Date.now()).slice(-4),
+    username,
+    nameHi: body.nameHi || username,
+    nameEn: body.nameEn || username,
+    designationHi: "सब-एडमिन",
+    designationEn: "Sub-Admin",
+    mobile: body.mobile || "",
+    email: body.email || "",
+    district: "लखनऊ (Lucknow)",
+    bankName: "State Bank of India (SBI)",
+    status: body.status || "active",
+    level: 2,
+    isCoreMember: false,
+    password,
+    adminPermissions: body.adminPermissions && typeof body.adminPermissions === "object" ? body.adminPermissions : {},
+    joinedDate: new Date().toISOString().slice(0, 10)
+  };
+  db.members.push(newSub);
+  await saveDb();
+  res.status(201).json({ ok: true, user: sanitizeMemberPublic(newSub) });
 });
 
 app.put("/api/users/:id/level", requireSuperAdmin, async (req, res) => {
@@ -1194,31 +1241,79 @@ function appendVerifyLog(req, found, query) {
   return entry;
 }
 
-app.get("/api/verify", (req, res) => {
-  const q = String(req.query.id || req.query.query || req.query.q || req.query.code || "").trim();
-  if (!q) return res.status(400).json({ ok: false, error: "Member ID or mobile number required" });
+function lookupPaymentForVerification(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return null;
+  return (db.payments || []).find(
+    (p) =>
+      (p.receiptNo && String(p.receiptNo).toLowerCase() === q) ||
+      (p.id && String(p.id).toLowerCase() === q) ||
+      (p.utrNumber && String(p.utrNumber).toLowerCase() === q)
+  ) || null;
+}
+
+function handleVerifyLookup(req, res, rawQuery) {
+  const q = String(rawQuery || "").trim();
+  if (!q) return res.status(400).json({ ok: false, error: "Member ID, Receipt No, or mobile number required" });
+  const requestedType = String(req.query.type || "").trim().toLowerCase();
+
+  const matchedPayment = lookupPaymentForVerification(q);
+  if (matchedPayment && (requestedType === "receipt" || !lookupMemberForVerification(q))) {
+    const linkedMember =
+      db.members.find(
+        (m) =>
+          (matchedPayment.memberId && m.id === matchedPayment.memberId) ||
+          (matchedPayment.memberCode && m.memberCode === matchedPayment.memberCode) ||
+          (matchedPayment.mobile && m.mobile === matchedPayment.mobile)
+      ) || null;
+    appendVerifyLog(req, linkedMember, q);
+    return res.json({
+      ok: true,
+      docType: requestedType || "receipt",
+      payment: matchedPayment,
+      member: linkedMember ? sanitizeMemberPublic(linkedMember) : null,
+      receipts: [matchedPayment]
+    });
+  }
+
+  if (requestedType === "receipt") {
+    appendVerifyLog(req, null, q);
+    return res.status(404).json({
+      ok: false,
+      docType: "receipt",
+      error: "इस रसीद संख्या / ट्रांज़ैक्शन आईडी से कोई रिकॉर्ड नहीं मिला। / Receipt record not found."
+    });
+  }
+
   const found = lookupMemberForVerification(q);
   appendVerifyLog(req, found, q);
   if (!found) {
-    return res.status(404).json({ ok: false, error: "इस सदस्य संख्या / मोबाइल से कोई रिकॉर्ड नहीं मिला। / Record not found." });
+    return res.status(404).json({
+      ok: false,
+      docType: requestedType || "idcard",
+      error: "इस सदस्य संख्या / मोबाइल से कोई रिकॉर्ड नहीं मिला। / Record not found."
+    });
   }
   const receipts = db.payments.filter(
     (p) => p.memberId === found.id || p.memberCode === found.memberCode || p.mobile === found.mobile
   );
-  res.json({ ok: true, member: sanitizeMemberPublic(found), receipts });
+  res.json({
+    ok: true,
+    docType: requestedType || "idcard",
+    member: sanitizeMemberPublic(found),
+    payment: receipts[0] || null,
+    receipts
+  });
+}
+
+app.get("/api/verify", (req, res) => {
+  const q = String(req.query.id || req.query.query || req.query.q || req.query.code || "").trim();
+  return handleVerifyLookup(req, res, q);
 });
 
 app.get("/api/verify/:query", (req, res) => {
   const q = decodeURIComponent(req.params.query).trim();
-  const found = lookupMemberForVerification(q);
-  appendVerifyLog(req, found, q);
-  if (!found) {
-    return res.status(404).json({ ok: false, error: "इस सदस्य संख्या / मोबाइल से कोई रिकॉर्ड नहीं मिला। / Record not found." });
-  }
-  const receipts = db.payments.filter(
-    (p) => p.memberId === found.id || p.memberCode === found.memberCode || p.mobile === found.mobile
-  );
-  res.json({ ok: true, member: sanitizeMemberPublic(found), receipts });
+  return handleVerifyLookup(req, res, q);
 });
 
 /* GET /api/verify-logs — Admin only: list all QR/manual verification events */
@@ -1246,18 +1341,16 @@ app.post("/api/members", async (req, res) => {
   const body = req.body || {};
   const isFromAdmin = Boolean(body.fromAdmin);
 
-  // If registering through public Join Us form, enforce strict verification
+  // If registering through public Join Us form, enforce email OTP verification
   if (!isFromAdmin) {
     const email = String(body.email || "").trim().toLowerCase();
     if (!email || !email.includes("@")) {
       return res.status(400).json({ ok: false, error: "मान्य ईमेल आईडी अनिवार्य है। / Valid email address is required." });
     }
-
     const existingEmail = db.members.find((m) => m.email && m.email.toLowerCase() === email);
     if (existingEmail) {
       return res.status(409).json({ ok: false, error: "यह ईमेल आईडी पहले से पंजीकृत है। कृपया लॉगिन करें। / This email is already registered." });
     }
-
     const token = String(body.emailVerificationToken || "").trim();
     if (!token || !verifyRegistrationToken(email, token)) {
       return res.status(400).json({
@@ -1275,24 +1368,18 @@ app.post("/api/members", async (req, res) => {
     if (existingMobile) {
       return res.status(409).json({ ok: false, error: "यह मोबाइल नंबर पहले से पंजीकृत है। कृपया लॉगिन करें या दूसरा नंबर दर्ज करें। / Mobile already registered." });
     }
-
-    const utrNumber = String(body.utrNumber || "").trim();
-    if (!utrNumber || utrNumber.length < 6) {
-      return res.status(400).json({
-        ok: false,
-        error: "भुगतान का 12-अंकीय UTR / Transaction No दर्ज करना अनिवार्य है। / Valid 12-digit UTR/Reference number is required."
-      });
-    }
   }
 
   const isCore = Boolean(body.isCoreMember);
-  const status = isFromAdmin ? (body.status || "active") : "active";
+  // Public registrations always start as 'pending' awaiting Level 1 / Level 2 Admin approval
+  const status = isFromAdmin ? (body.status || "active") : "pending";
   const today = new Date().toISOString().slice(0, 10);
   
-  // Dynamic Membership Pricing Logic (Calendar-Year System: price = (13 - currentMonth) * rate)
+  // Dynamic Membership Pricing Logic
   const pricing = getMembershipPricing();
-  const validUntil = body.validUntil || pricing.validUntil; // Expires Dec 31 of current calendar year
+  const validUntil = body.validUntil || pricing.validUntil;
   const feePaid = isFromAdmin ? (body.feePaid !== undefined ? Number(body.feePaid) : 0) : pricing.price;
+  const emailVerified = !isFromAdmin && Boolean(body.emailVerificationToken && verifyRegistrationToken(body.email, body.emailVerificationToken));
 
   const newMember = {
     id: "mem-" + Date.now(),
@@ -1301,6 +1388,8 @@ app.post("/api/members", async (req, res) => {
     nameEn: body.nameEn || body.nameHi || "New Member",
     fatherName: body.fatherName || "",
     fatherNameEn: body.fatherNameEn || body.fatherName || "",
+    age: body.age ? String(body.age).trim() : "",
+    localAddress: String(body.localAddress || "").trim(),
     isCoreMember: isCore,
     memberCategory: isCore ? "Core Committee (प्रदेश मुख्य कार्यकारिणी)" : (body.memberCategory || "General Member (सक्रिय सदस्य)"),
     designationHi: body.designationHi || (isCore ? "प्रदेश पदाधिकारी" : "सक्रिय बैंक मित्र सदस्य"),
@@ -1312,14 +1401,20 @@ app.post("/api/members", async (req, res) => {
     bankName: body.bankName || "State Bank of India (SBI)",
     bcCompany: body.bcCompany || "CSC e-Governance Services India Ltd.",
     koCode: body.koCode || "",
+    livelihoodInstitution: String(body.livelihoodInstitution || "").trim(),
+    livelihoodDesignation: String(body.livelihoodDesignation || "").trim(),
+    livelihoodDuration: String(body.livelihoodDuration || "").trim(),
+    livelihoodRemuneration: String(body.livelihoodRemuneration || "").trim(),
+    applicationDate: String(body.applicationDate || today).trim(),
     mobile: String(body.mobile || "").trim(),
     whatsapp: String(body.whatsapp || body.mobile || "").trim(),
     email: String(body.email || "").trim(),
-    isEmailVerified: !isFromAdmin ? true : Boolean(body.isEmailVerified),
-    emailVerifiedAt: !isFromAdmin ? new Date().toISOString() : (body.emailVerifiedAt || null),
+    isEmailVerified: isFromAdmin ? Boolean(body.isEmailVerified) : emailVerified,
+    emailVerifiedAt: emailVerified ? new Date().toISOString() : (body.emailVerifiedAt || null),
     websiteUrl: String(body.websiteUrl || body.website || "").trim(),
     bloodGroup: body.bloodGroup || "O+",
     photoUrl: body.photoUrl || "",
+    signatureUrl: body.signatureUrl || "",
     messageHi: body.messageHi || "",
     messageEn: body.messageEn || "",
     password: String(body.password || "123456").trim(),
@@ -1331,7 +1426,11 @@ app.post("/api/members", async (req, res) => {
     level: isFromAdmin ? (body.level ? (Number(body.level) === 1 ? 2 : Number(body.level)) : (isCore ? 2 : 3)) : 3,
     joinedDate: body.joinedDate || today,
     validUntil,
-    feePaid
+    feePaid,
+    entryFeePaid: pricing.entryFee,
+    monthlyRatePaid: pricing.ratePerMonth,
+    remainingMonthsPaid: pricing.remainingMonths,
+    utrNumber: String(body.utrNumber || "").trim()
   };
 
   db.members.push(newMember);
@@ -1357,7 +1456,7 @@ app.post("/api/members", async (req, res) => {
       utrNumber: String(body.utrNumber || "").trim() || ("UTR" + String(Date.now()).slice(-8)),
       receiptProofUrl: body.receiptProofUrl || "",
       signatoryIds: newMember.letterSignatoryIds || db.settings.defaultSignatoryIds || [db.settings.defaultSignatoryId || "sig-gs"],
-      status: "verified",
+      status: isFromAdmin ? "verified" : "pending",
       date: today
     };
     db.payments.unshift(createdPayment);
@@ -1365,6 +1464,56 @@ app.post("/api/members", async (req, res) => {
 
   await saveDb();
   res.status(201).json({ ok: true, member: sanitizeMemberPublic(newMember), payment: createdPayment });
+});
+
+app.post("/api/members/:id/approve", requireAdmin, async (req, res) => {
+  const idx = db.members.findIndex((m) => m.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "Member not found" });
+  const m = db.members[idx];
+  m.status = "active";
+  if (!m.level || m.level > 3) m.level = 3;
+  m.approvedAt = new Date().toISOString();
+  m.approvedBy = req.auth?.member?.nameEn || "Admin";
+  (db.payments || []).forEach((p) => {
+    if ((p.memberId === m.id || p.memberCode === m.memberCode) && p.status === "pending") {
+      p.status = "verified";
+    }
+  });
+  await saveDb();
+  res.json({ ok: true, member: sanitizeMemberPublic(m) });
+});
+
+app.post("/api/members/approve-bulk", requireAdmin, async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  let count = 0;
+  db.members.forEach((m) => {
+    if ((ids.length === 0 && m.status === "pending") || ids.includes(m.id)) {
+      if (m.status === "pending") {
+        m.status = "active";
+        if (!m.level || m.level > 3) m.level = 3;
+        m.approvedAt = new Date().toISOString();
+        m.approvedBy = req.auth?.member?.nameEn || "Admin";
+        count++;
+        (db.payments || []).forEach((p) => {
+          if ((p.memberId === m.id || p.memberCode === m.memberCode) && p.status === "pending") {
+            p.status = "verified";
+          }
+        });
+      }
+    }
+  });
+  await saveDb();
+  res.json({ ok: true, approvedCount: count });
+});
+
+app.post("/api/members/:id/reject", requireAdmin, async (req, res) => {
+  const idx = db.members.findIndex((m) => m.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: "Member not found" });
+  const m = db.members[idx];
+  m.status = "rejected";
+  m.rejectedAt = new Date().toISOString();
+  await saveDb();
+  res.json({ ok: true, member: sanitizeMemberPublic(m) });
 });
 
 app.put("/api/members/:id", requireAdmin, async (req, res) => {
@@ -2286,6 +2435,20 @@ connectMongo()
     };
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`UPBMS MERN API running at http://127.0.0.1:${PORT}`);
+      const keepAliveBase = (process.env.KEEP_ALIVE_URL || process.env.RENDER_EXTERNAL_URL || "").trim().replace(/\/+$/, "");
+      if (keepAliveBase) {
+        const pingUrl = `${keepAliveBase}/api/health`;
+        const intervalMs = 9 * 60 * 1000; // every 9 minutes
+        setInterval(async () => {
+          try {
+            const r = await fetch(pingUrl);
+            if (!r.ok) console.warn(`[KeepAlive] ${pingUrl} responded ${r.status}`);
+          } catch (e) {
+            console.warn(`[KeepAlive] Ping failed:`, e.message);
+          }
+        }, intervalMs).unref();
+        console.log(`[KeepAlive] Enabled every 9 min -> ${pingUrl}`);
+      }
     });
     server.on("error", (err) => {
       console.error("API failed to listen:", err.message);

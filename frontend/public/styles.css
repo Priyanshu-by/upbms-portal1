@@ -1932,6 +1932,10 @@ textarea.form-control {
 }
 
 /* ==================== MODAL, TOAST & FOOTER ==================== */
+body.modal-open {
+  overflow: hidden !important;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1942,6 +1946,8 @@ textarea.form-control {
   justify-content: center;
   padding: 14px;
   backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .modal-box {
@@ -1949,8 +1955,10 @@ textarea.form-control {
   border-radius: var(--radius-lg);
   max-width: min(980px, 96vw);
   width: 100%;
-  max-height: 93vh;
-  overflow-y: auto;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.36);
 }
 
@@ -1963,13 +1971,23 @@ textarea.form-control {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 10;
 }
 
 .modal-body {
   padding: clamp(14px, 2vw, 22px);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.modal-box > form {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 .toast-container {

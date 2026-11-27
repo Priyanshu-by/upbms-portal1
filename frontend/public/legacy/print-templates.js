@@ -136,7 +136,7 @@ window.UPBMSPrint = (function () {
 
     const photo = member.photoUrl || initialsAvatarSvg(member.nameEn || member.nameHi);
     const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "";
-    const verifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}` : `UPBMS|${member.memberCode}|${member.nameEn}|${member.status}`;
+    const verifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}&type=idcard` : `UPBMS|${member.memberCode}|${member.nameEn}|${member.status}`;
     const qrFront = generateQrSvg(verifyPayload, 44, "#0a2252");
     const qrBack = generateQrSvg(verifyPayload, 84, "#0a2252");
 
@@ -264,7 +264,7 @@ window.UPBMSPrint = (function () {
     const tplTxt = settings.letterTemplateText || {};
     const photo = member.photoUrl || initialsAvatarSvg(member.nameEn || member.nameHi);
     const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "";
-    const letterVerifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}` : `UPBMS-LETTER|${member.memberCode}|${member.joinedDate}`;
+    const letterVerifyPayload = origin ? `${origin}/?verify=${encodeURIComponent(member.memberCode || member.id)}&type=letter` : `UPBMS-LETTER|${member.memberCode}|${member.joinedDate}`;
     const qrSvg = generateQrSvg(letterVerifyPayload, 78, headerColor);
 
     const nameDisp = isEn ? (member.nameEn || member.nameHi) : (member.nameHi || member.nameEn);
@@ -534,7 +534,11 @@ window.UPBMSPrint = (function () {
     const bgImg = bgCfg.bgImageUrl || "";
     const bgOp = Number(bgCfg.bgOpacity ?? 0.12);
 
-    const qrSvg = generateQrSvg(`UPBMS-RCP|${payment.receiptNo}|INR:${payment.amount}|${payment.status}`, 76, headerColor);
+    const origin = (typeof window !== "undefined" && window.location && window.location.origin) ? window.location.origin : "";
+    const receiptVerifyPayload = origin
+      ? `${origin}/?verify=${encodeURIComponent(payment.receiptNo || payment.id)}&type=receipt`
+      : `UPBMS-RCP|${payment.receiptNo}|INR:${payment.amount}|${payment.status}`;
+    const qrSvg = generateQrSvg(receiptVerifyPayload, 76, headerColor);
     const isDonation = payment.paymentCategory === "donation";
     const receiptHeading = isDonation
       ? (isEn ? "CONTRIBUTION / DONATION RECEIPT" : "सहयोग राशि रसीद")

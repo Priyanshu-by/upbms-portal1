@@ -1,25 +1,31 @@
 import { useEffect, useState } from "react";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { api, uploadFile, optimizeImageUrl } from "../api";
 import { usePortal } from "../context";
 import { t, localizeDual } from "../utils";
 
 const TABS = [
-  ["dashboard", "📊 डैशबोर्ड", "📊 Dashboard"],
-  ["users", "👥 उपयोगकर्ता प्रबंधन", "👥 User Management"],
-  ["gatewaysettings", "💳 गेटवे व भुगतान विकल्प", "💳 Gateway & Payment Options"],
+  ["dashboard", "📊 डैशबोर्ड व सारांश", "📊 Dashboard"],
+  ["approval", "✅ सदस्य अनुमोदन (अनुमोदन कतार)", "✅ Members Approval"],
+  ["hideshow", "👁️ दिखाएँ / छिपाएँ (Hide/Show)", "👁️ Hide / Show Pages"],
+  ["payments", "💰 सदस्यता शुल्क व रसीद", "💰 Fee & Receipts"],
+  ["bankqr", "🏦 बैंक, UPI व QR प्रबंधन", "🏦 Bank, UPI & QR Settings"],
+  ["formtext", "📝 सदस्यता फॉर्म पाठ", "📝 Membership Form Text"],
+  ["users", "👥 सदस्य, संशोधन व पासवर्ड रीसेट", "👥 User Management"],
   ["signs", "✍️ हस्ताक्षर एवं मुहर", "✍️ Signature & Seal"],
-  ["menus", "🧭 मेनू व सेक्शन", "🧭 Menus & Sections"],
-  ["about", "🏛️ परिचय व प्रमाण-पत्र", "🏛️ About & Certificates"],
+  ["menus", "🧭 मेनू नाम, बटन व सेक्शन", "🧭 Menus & Sections"],
+  ["about", "🏛️ हमारे बारे में, कार्यकारिणी व प्रमाण-पत्र", "🏛️ About & Certificates"],
   ["templates", "🎨 बैकग्राउंड व शर्तें", "🎨 Backgrounds & Terms"],
-  ["hero", "🖼️ स्लाइडर व अभियान", "🖼️ Slider & Campaign"],
-  ["members", "👥 सदस्य", "👥 Members"],
-  ["circulars", "📑 सर्कुलर", "📑 Circulars"],
-  ["documents", "📂 दस्तावेज़ व मांगें", "📂 Documents & Demands"],
-  ["portals", "🌐 पोर्टल", "🌐 Portals"],
-  ["payments", "💳 शुल्क व रसीद", "💳 Fees & Receipts"],
+  ["hero", "🖼️ स्लाइडर, अभियान व 4 बॉक्स", "🖼️ Slider & Campaign"],
+  ["members", "📋 मास्टर सूची (जनपद/बैंक)", "📋 Master Lists"],
+  ["circulars", "📑 बैंक मित्र सर्कुलर व PDF", "📑 Circulars"],
+  ["documents", "📂 संघ दस्तावेज़ एवं मांगें", "📂 Documents & Demands"],
+  ["portals", "🌐 महत्वपूर्ण पोर्टल लिंक", "🌐 Portals"],
   ["grievance", "⚖️ शिकायत व समाचार", "⚖️ Grievance & News"],
   ["verifylogs", "🔍 सत्यापन रिकॉर्ड", "🔍 Verification Records"],
-  ["branding", "⚙️ संस्था व ब्रांडिंग", "⚙️ Org & Branding"]
+  ["branding", "⚙️ संगठन पहचान, सोशल व पिन", "⚙️ Org & Branding"],
+  ["subadmins", "👑 सुपर एडमिन / सब-एडमिन", "👑 Super Admin & Sub-Admins"]
 ];
 
 function lines(text) {
@@ -161,8 +167,37 @@ export function AdminPage() {
 
   const saveSettings = (patch, msg) => run("/api/settings", { method: "PUT", body: patch }, msg);
 
-  // Filter tabs: Level 2 admins cannot see or access User Management or Gateways!
-  const visibleTabs = TABS.filter(([id]) => (id !== "users" && id !== "gatewaysettings") || isSuperAdmin);
+  const TAB_PERM_MAP = {
+    dashboard: null,
+    approval: "approvals",
+    hideshow: "visibility",
+    payments: "feeSettings",
+    bankqr: "bankQr",
+    formtext: "formText",
+    users: "members",
+    signs: "signatories",
+    menus: "orgSettings",
+    about: "websiteContent",
+    templates: "signatories",
+    hero: "websiteContent",
+    members: "members",
+    circulars: "documents",
+    documents: "documents",
+    portals: "websiteContent",
+    grievance: "grievance",
+    verifylogs: "logs",
+    branding: "orgSettings",
+    subadmins: "subAdminsOnly"
+  };
+  const perms = session?.member?.adminPermissions || null;
+  const hasPermsConfigured = Boolean(perms && Object.keys(perms).length > 0);
+  const visibleTabs = TABS.filter(([id]) => {
+    if (id === "subadmins" || id === "users") return isSuperAdmin;
+    if (isSuperAdmin || !hasPermsConfigured) return true;
+    const reqPerm = TAB_PERM_MAP[id];
+    if (!reqPerm) return true;
+    return Boolean(perms[reqPerm]);
+  });
 
   return (
     <div className="container" style={{ padding: "18px 0 40px" }}>
@@ -174,35 +209,45 @@ export function AdminPage() {
             </div>
             <div style={{ fontWeight: 900 }}>{t(lang, "सुपर एडमिन कंट्रोल पैनल", "Super Admin Control Panel")}</div>
           </div>
-          {visibleTabs.map(([id, labelHi, labelEn]) => (
-            <button key={id} className={`admin-menu-btn ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
-              <span>{t(lang, labelHi, labelEn)}</span>
-            </button>
-          ))}
+          {visibleTabs.map(([id, labelHi, labelEn]) => {
+            const pendingCount = (state.members || []).filter((m) => m.status === "pending").length;
+            return (
+              <button key={id} className={`admin-menu-btn ${tab === id ? "active" : ""}`} onClick={() => setTab(id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                <span>{t(lang, labelHi, labelEn)}</span>
+                {id === "approval" && pendingCount > 0 && (
+                  <span style={{ background: tab === id ? "#0b1a30" : "#f59e0b", color: tab === id ? "#ffd166" : "#0b1a30", borderRadius: 12, padding: "1px 7px", fontSize: "0.72rem", fontWeight: 900 }}>{pendingCount}</span>
+                )}
+              </button>
+            );
+          })}
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
-            <button className="btn btn-white btn-sm" onClick={() => setRoute("home")}>🌐 {t(lang, "वेबसाइट प्रीव्यू", "Website Preview")}</button>
-            <button className="btn btn-danger btn-sm" onClick={logout}>🔒 {t(lang, "लॉगआउट", "Logout")}</button>
+            <button className="btn btn-white btn-sm" onClick={() => setRoute("home")}>🌐 {t(lang, "वेबसाइट प्रीव्यू देखें", "Website Preview")}</button>
+            <button className="btn btn-danger btn-sm" onClick={logout}>🔒 {t(lang, "एडमिन लॉगआउट", "Logout")}</button>
           </div>
         </aside>
         <section style={{ minWidth: 0 }}>
           {tab === "dashboard" && <Dashboard portal={portal} run={run} setTab={setTab} />}
+          {tab === "approval" && <MembersApprovalTab portal={portal} run={run} setTab={setTab} />}
+          {tab === "hideshow" && <HideShowTab state={state} saveSettings={saveSettings} lang={lang} />}
+          {tab === "bankqr" && <BankQrTab state={state} saveSettings={saveSettings} session={session} showToast={showToast} lang={lang} />}
+          {tab === "formtext" && <FormTextTab state={state} saveSettings={saveSettings} session={session} showToast={showToast} lang={lang} />}
+          {tab === "subadmins" && (
+            isSuperAdmin ? (
+              <SubAdminsTab portal={portal} run={run} />
+            ) : (
+              <div className="card-panel">
+                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
+                <p>{t(lang, "सब-एडमिन एवं अधिकार प्रबंधन केवल सुपर एडमिन के लिए आरक्षित है।", "Sub-Admin & Permissions management is strictly restricted to Super Admin.")}</p>
+              </div>
+            )
+          )}
           {tab === "users" && (
             isSuperAdmin ? (
-              <UsersManagement portal={portal} run={run} />
+              <UsersManagement portal={portal} run={run} setTab={setTab} />
             ) : (
               <div className="card-panel">
                 <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
                 <p>{t(lang, "उपयोगकर्ता प्रबंधन केवल सुपर एडमिन के लिए आरक्षित है।", "User Management is strictly restricted to Super Admin.")}</p>
-              </div>
-            )
-          )}
-          {tab === "gatewaysettings" && (
-            isSuperAdmin ? (
-              <GatewaySettingsTab state={state} saveSettings={saveSettings} lang={lang} setRoute={setRoute} />
-            ) : (
-              <div className="card-panel">
-                <h3 style={{ color: "var(--danger)" }}>🔒 {t(lang, "पहुंच प्रतिबंधित (Access Restricted)", "Access Restricted")}</h3>
-                <p>{t(lang, "गेटवे व भुगतान सेटिंग्स केवल सुपर एडमिन के लिए आरक्षित है।", "Payment gateway options are strictly restricted to Super Admin.")}</p>
               </div>
             )
           )}
@@ -610,21 +655,1797 @@ export function GatewaySettingsTab({ state, saveSettings, lang, setRoute }) {
   );
 }
 
-function UsersManagement({ portal, run }) {
+async function downloadMembershipFormPdf(member, state, showToast, lang) {
+  if (!member) return;
+  const s = state?.settings || {};
+  const fc = s.membershipFormConfig || {};
+  const officers = s.signatories || [];
+  const officer = (fc.certifyingOfficerId && officers.find((o) => o.id === fc.certifyingOfficerId))
+    || officers.find((o) => o.id === member.signatoryId)
+    || officers.find((o) => o.id === s.defaultSignatoryId)
+    || officers[0] || {};
+  const appDate = member.applicationDate || member.joinedDate || new Date().toISOString().slice(0, 10);
+  const formattedAppDate = appDate.includes("-") ? appDate.split("-").reverse().join("-") : appDate;
+  const todayFormatted = new Date().toISOString().slice(0, 10).split("-").reverse().join("-");
+  const esc = (v) => String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const row = (label, val) => `
+    <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:9px;font-size:13.5px;line-height:1.5;">
+      <div style="font-weight:700;white-space:nowrap;padding-bottom:4px;">${esc(label)}</div>
+      <div style="flex:1;border-bottom:1.5px dotted #475569;padding:0 8px 6px 8px;font-weight:600;color:#0f172a;min-height:22px;line-height:1.45;">${esc(val)}</div>
+    </div>
+  `;
+
+  const certSigSrc = fc.customCertifierSigUrl || officer?.signatureUrl || "";
+  const applicantSigHtml = fc.applicantSigSource === "none"
+    ? ""
+    : member.signatureUrl && fc.applicantSigSource !== "typed"
+    ? `<img src="${esc(member.signatureUrl)}" crossorigin="anonymous" style="max-height:38px;max-width:150px;object-fit:contain;display:block;margin:0 auto 6px;" />`
+    : `<div style="font-style:italic;color:#1e3a8a;font-weight:700;margin-bottom:6px;">${esc(member.nameHi || member.nameEn)}</div>`;
+
+  const container = document.createElement("div");
+  container.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;background:#ffffff;padding:34px 44px;color:#111827;font-family:'Noto Sans Devanagari','Mangal',Arial,sans-serif;box-sizing:border-box;";
+  container.innerHTML = `
+    <div style="text-align:center;font-weight:900;font-size:19px;text-decoration:underline;margin-bottom:16px;">${esc(fc.formTitleHi || "सदस्यता — फॉर्म")}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:12px;flex:1;">
+        <img src="${esc(fc.logoUrl || s.logoUrl || "/images/upbms-crest.svg")}" crossorigin="anonymous" style="width:58px;height:58px;object-fit:contain;border-radius:50%;" />
+        <div>
+          <div style="font-weight:900;font-size:16px;color:#0b1a30;">${esc(fc.unionNameHi || `यूनियन का नाम:- ${s.orgNameHi || "उत्तर प्रदेश बैंक मित्र संघ, लखनऊ"}`)}</div>
+          <div style="font-size:12.5px;color:#334155;margin-top:3px;">पता:- ${esc(s.officeAddressHi || "मकान नं० 638/ख-459, इन्दिरा प्रियदर्शनी, जरहरा-लखनऊ")}</div>
+        </div>
+      </div>
+      <div style="width:86px;height:102px;border:1.5px solid #1e293b;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f8fafc;">
+        ${member.photoUrl
+          ? `<img src="${esc(member.photoUrl)}" crossorigin="anonymous" style="width:100%;height:100%;object-fit:cover;" />`
+          : `<span style="font-size:11px;color:#94a3b8;">फोटो</span>`}
+      </div>
+    </div>
+
+    <div style="margin-bottom:14px;font-size:13.5px;line-height:1.6;">
+      <div>${esc(fc.salutation || "सेवा में, महामंत्री जी,")}</div>
+      <div>${esc(fc.bodyText || "महोदय, कृपया मुझे उपर्युक्त यूनियन का साधारण/विशिष्ट सदस्य बना लें। मैंने यूनियन के विधान व उसके उप नियम समझ लिए हैं और मैं प्रतिज्ञा करता हूँ/करती हूँ कि मैं उनका पालन करूँगा।")}</div>
+      <div>${esc(fc.feeLine || "मैं प्रवेश-शुल्क तथा अपने वार्षिक चन्दे की पहली किस्त के रूप में निर्धारित शुल्क जमा करता हूँ।")}</div>
+    </div>
+
+    ${row(fc.fieldName || "प्रार्थी का पूरा नाम-", member.nameHi || member.nameEn)}
+    ${row(fc.fieldFather || "पिता का नाम-", member.fatherName || member.fatherNameEn)}
+    ${row(fc.fieldAge || "उम्र-", member.age)}
+    ${row(fc.fieldLocalAddress || "स्थानीय निजी पता-", member.localAddress)}
+    ${row(fc.fieldBlock || "केंद्र का पता (ब्लॉक)-", member.block || member.blockEn)}
+    ${row(fc.fieldDistrict || "जनपद-", member.district)}
+    ${row(fc.fieldBank || "संबद्ध बैंक-", member.bankName)}
+    ${row(fc.fieldKoCode || "KO CODE-", member.koCode)}
+
+    <div style="font-weight:800;margin-top:10px;margin-bottom:6px;font-size:13.5px;">${esc(fc.livelihoodHeading || "जीविका वृत्ति सम्बन्धी विवरण-")}</div>
+    ${row(fc.livelihood1 || "(1) संस्था या मालिक का नाम जिनके कर्मचारी हो-", member.livelihoodInstitution)}
+    ${row(fc.livelihood2 || "(2) कार्य में पद-", member.livelihoodDesignation)}
+    ${row(fc.livelihood3 || "(3) नौकरी/कार्य की अवधि-", member.livelihoodDuration)}
+    ${row(fc.livelihood4 || "(4) मासिक/दैनिक वेतन-", member.livelihoodRemuneration)}
+    ${row(fc.fieldDate || "तारीख-", formattedAppDate)}
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:24px;padding-bottom:14px;border-bottom:1.5px solid #475569;">
+      <div style="font-size:13.5px;">
+        <div style="font-weight:700;">${esc(fc.regardsText || "भवदीय")}</div>
+        <div style="font-weight:800;margin-top:4px;">${esc(member.nameHi || member.nameEn)}</div>
+      </div>
+      <div style="text-align:center;min-width:200px;">
+        ${applicantSigHtml}
+        <div style="border-top:1px dotted #475569;padding-top:4px;font-size:12px;font-weight:700;">${esc(fc.applicantSigLabel || "प्रार्थी के हस्ताक्षर/अंगूठे का निशान")}</div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div style="font-weight:800;font-size:13.5px;margin-bottom:8px;">${esc(fc.certifierAuthority || "प्रमाणित कर्ता — संघ पदाधिकारी")}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;">
+        <div style="flex:1;">
+          ${row(fc.certifierNameLabel || "(1) नाम-", officer?.nameHi || "श्री आलोक कुमार वर्मा")}
+          ${fc.showDesignation !== "no" ? `<div style="font-size:12.5px;font-weight:700;color:#334155;margin-bottom:6px;">${esc(officer?.designationHi || "प्रदेश महामंत्री")}</div>` : ""}
+          ${row(fc.certifierDateLabel || "(3) तारीख", fc.autoFillDate === "no" ? "" : todayFormatted)}
+        </div>
+        <div style="text-align:center;min-width:170px;">
+          ${fc.certifiedByMode !== "none" && certSigSrc ? `<img src="${esc(certSigSrc)}" crossorigin="anonymous" style="max-height:38px;max-width:140px;object-fit:contain;display:block;margin:0 auto 4px;" />` : ""}
+          <div style="border-top:1px dotted #475569;padding-top:4px;font-size:12px;font-weight:700;">${esc(fc.certifierSigLabel || "(2) हस्ताक्षर")}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;margin-top:16px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:11.5px;color:#64748b;">
+      <span>${esc(s.shortName || "उत्तर प्रदेश बैंक मित्र संघ")}</span>
+      <span>Date:- ${esc(formattedAppDate)}</span>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+  try {
+    if (showToast) showToast(lang === "en" ? "Generating PDF..." : "PDF तैयार हो रहा है...");
+    const imgs = [...container.querySelectorAll("img")];
+    await Promise.all(
+      imgs.map((img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise((res) => {
+              img.onload = res;
+              img.onerror = res;
+              setTimeout(res, 2500);
+            })
+      )
+    );
+    const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const pdfH = (canvas.height * pdfW) / canvas.width;
+    pdf.addImage(imgData, "PNG", 0, 0, pdfW, Math.min(pdfH, pdf.internal.pageSize.getHeight()));
+    pdf.save(`UPBMS-Form-${member.memberCode || member.id || "Member"}.pdf`);
+    if (showToast) showToast(lang === "en" ? "✓ PDF downloaded!" : "✓ PDF डाउनलोड हो गया!");
+  } catch (err) {
+    if (showToast) showToast(err.message || "PDF download failed");
+  } finally {
+    container.remove();
+  }
+}
+
+function MembershipFormModal({ member, state, onClose, lang }) {
+  if (!member) return null;
+  const s = state.settings || {};
+  const officers = s.signatories || [];
+  const officer = officers.find((o) => o.id === member.signatoryId) || officers.find((o) => o.id === s.defaultSignatoryId) || officers[0] || {};
+  const appDate = member.applicationDate || member.joinedDate || new Date().toISOString().slice(0, 10);
+  const formattedAppDate = appDate.includes("-") ? appDate.split("-").reverse().join("-") : appDate;
+  const todayFormatted = new Date().toISOString().slice(0, 10).split("-").reverse().join("-");
+
+  function handlePrintPdf() {
+    const htmlContent = document.getElementById("a4-membership-form-sheet")?.outerHTML || "";
+    const w = window.open("", "_blank", "width=900,height=1050");
+    if (!w) {
+      window.print();
+      return;
+    }
+    w.document.write(`<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>सदस्यता फॉर्म - ${member.nameHi || member.nameEn || member.memberCode}</title>
+  <style>
+    @page { size: A4; margin: 10mm 14mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; font-family: "Noto Sans Devanagari", "Mangal", Arial, sans-serif; color: #111827; background: #fff; }
+    #a4-membership-form-sheet { border: none !important; box-shadow: none !important; padding: 8px 12px !important; max-width: 100% !important; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>${htmlContent}
+<script>setTimeout(function(){ window.print(); }, 300);</script>
+</body>
+</html>`);
+    w.document.close();
+  }
+
+  const FieldLine = ({ label, value }) => (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, marginBottom: 7, fontSize: "0.86rem", lineHeight: 1.4 }}>
+      <span style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ flex: 1, borderBottom: "1.5px dotted #475569", paddingLeft: 6, paddingBottom: 1, fontWeight: 600, color: "#0f172a", minHeight: 19 }}>
+        {value || ""}
+      </span>
+    </div>
+  );
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.72)", zIndex: 9999,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16
+    }}>
+      <div style={{
+        background: "#ffffff", borderRadius: 14, maxWidth: 820, width: "100%", maxHeight: "92vh",
+        display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.4)"
+      }}>
+        {/* Modal Header */}
+        <div style={{
+          background: "#0b1a30", color: "#ffffff", padding: "12px 18px",
+          display: "flex", justifyContent: "space-between", alignItems: "center"
+        }}>
+          <div style={{ fontWeight: 800, fontSize: "0.98rem", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>📄</span>
+            <span>{t(lang, "सदस्यता फॉर्म — A4 प्रीव्यू", "Membership Form — A4 Preview")}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "#fecaca", color: "#991b1b", border: "none", borderRadius: 6, width: 28, height: 28, fontWeight: 900, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Info Banner */}
+        <div style={{ padding: "10px 18px 0" }}>
+          <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 12px", fontSize: "0.8rem", color: "#1e40af", fontWeight: 700 }}>
+            ℹ️ {t(lang, "यही प्रारूप A4 पर छपेगा / PDF में सेव होगा। नीचे बटन दबाकर सीधे PDF सेव कर सकते हैं।", "This exact A4 layout will be printed / saved as PDF. Click the button below to save as PDF.")}
+          </div>
+        </div>
+
+        {/* Scrollable A4 Preview */}
+        <div style={{ overflowY: "auto", padding: "14px 18px", flex: 1 }}>
+          <div id="a4-membership-form-sheet" style={{
+            border: "1.5px solid #cbd5e1", background: "#ffffff", padding: "24px 28px",
+            maxWidth: 740, margin: "0 auto", color: "#111827", fontSize: "0.86rem", lineHeight: 1.55
+          }}>
+            <div style={{ textAlign: "center", fontWeight: 900, fontSize: "1.15rem", textDecoration: "underline", marginBottom: 14 }}>
+              सदस्यता — फॉर्म
+            </div>
+
+            {/* Header Row: Logo + Union Name + Photo Box */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+                <img
+                  src={s.logoUrl || "/images/upbms-crest.svg"}
+                  alt="Logo"
+                  style={{ width: 58, height: 58, objectFit: "contain", borderRadius: "50%" }}
+                />
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: "1.02rem", color: "#0b1a30" }}>
+                    यूनियन का नाम:- {s.orgNameHi || "उत्तर प्रदेश बैंक मित्र संघ, लखनऊ"}
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "#334155", marginTop: 2 }}>
+                    पता:- {s.officeAddressHi || "मकान नं० 638/ख-459, इन्दिरा प्रियदर्शनी, जरहरा-लखनऊ"}
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                width: 82, height: 98, border: "1.5px solid #1e293b", flexShrink: 0,
+                display: "grid", placeItems: "center", overflow: "hidden", background: "#f8fafc"
+              }}>
+                {member.photoUrl ? (
+                  <img src={member.photoUrl} alt="Photo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: "0.68rem", color: "#94a3b8", textAlign: "center" }}>फोटो</span>
+                )}
+              </div>
+            </div>
+
+            {/* Application Letter Text */}
+            <div style={{ marginBottom: 12, fontSize: "0.84rem" }}>
+              <div>सेवा में, महामंत्री जी,</div>
+              <div>
+                महोदय, कृपया मुझे उपर्युक्त यूनियन का साधारण/विशिष्ट सदस्य बना लें। मैंने यूनियन के विधान व उसके उप नियम समझ लिए हैं और मैं प्रतिज्ञा करता हूँ/करती हूँ कि मैं उनका पालन करूँगा।
+              </div>
+              <div>मैं प्रवेश-शुल्क तथा अपने वार्षिक चन्दे की पहली किस्त के रूप में निर्धारित शुल्क जमा करता हूँ।</div>
+            </div>
+
+            {/* Dotted Fields */}
+            <FieldLine label="प्रार्थी का पूरा नाम-" value={member.nameHi || member.nameEn} />
+            <FieldLine label="पिता का नाम-" value={member.fatherName || member.fatherNameEn} />
+            <FieldLine label="उम्र-" value={member.age} />
+            <FieldLine label="स्थानीय निजी पता-" value={member.localAddress} />
+            <FieldLine label="केंद्र का पता (ब्लॉक)-" value={member.block || member.blockEn} />
+            <FieldLine label="जनपद-" value={member.district} />
+            <FieldLine label="संबद्ध बैंक-" value={member.bankName} />
+            <FieldLine label="KO CODE-" value={member.koCode} />
+
+            <div style={{ fontWeight: 800, marginTop: 8, marginBottom: 5, fontSize: "0.86rem" }}>
+              जीविका वृत्ति सम्बन्धी विवरण-
+            </div>
+            <FieldLine label="(1) संस्था या मालिक का नाम जिनके कर्मचारी हो-" value={member.livelihoodInstitution} />
+            <FieldLine label="(2) कार्य में पद-" value={member.livelihoodDesignation} />
+            <FieldLine label="(3) नौकरी/कार्य की अवधि-" value={member.livelihoodDuration} />
+            <FieldLine label="(4) मासिक/दैनिक वेतन-" value={member.livelihoodRemuneration} />
+            <FieldLine label="तारीख-" value={formattedAppDate} />
+
+            {/* Applicant Signature Row */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 18, paddingBottom: 14, borderBottom: "1.5px solid #475569" }}>
+              <div style={{ fontSize: "0.84rem" }}>
+                <div style={{ fontWeight: 700 }}>भवदीय</div>
+                <div style={{ fontWeight: 800, marginTop: 2 }}>{member.nameHi || member.nameEn}</div>
+              </div>
+              <div style={{ textAlign: "center", minWidth: 190 }}>
+                {member.signatureUrl && (
+                  <img src={member.signatureUrl} alt="Applicant Signature" style={{ maxHeight: 36, maxWidth: 150, objectFit: "contain", display: "block", margin: "0 auto 4px" }} />
+                )}
+                {!member.signatureUrl && (
+                  <div style={{ fontStyle: "italic", color: "#1e3a8a", fontWeight: 700, marginBottom: 2 }}>{member.nameHi || member.nameEn}</div>
+                )}
+                <div style={{ borderTop: "1px dotted #475569", paddingTop: 2, fontSize: "0.76rem", fontWeight: 700 }}>
+                  प्रार्थी के हस्ताक्षर/अंगूठे का निशान
+                </div>
+              </div>
+            </div>
+
+            {/* Officer Attestation Section */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: "0.86rem", marginBottom: 6 }}>प्रमाणित कर्ता — संघ पदाधिकारी</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <FieldLine label="(1) नाम-" value={officer?.nameHi || "श्री आलोक कुमार वर्मा"} />
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
+                    {officer?.designationHi || "प्रदेश महामंत्री"}
+                  </div>
+                  <FieldLine label="(3) तारीख" value={todayFormatted} />
+                </div>
+                <div style={{ textAlign: "center", minWidth: 160 }}>
+                  {officer?.signatureUrl && (
+                    <img src={officer.signatureUrl} alt="Officer Signature" style={{ maxHeight: 38, maxWidth: 140, objectFit: "contain", display: "block", margin: "0 auto 2px" }} />
+                  )}
+                  <div style={{ borderTop: "1px dotted #475569", paddingTop: 2, fontSize: "0.76rem", fontWeight: 700 }}>
+                    (2) हस्ताक्षर
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, paddingTop: 6, borderTop: "1px solid #e2e8f0", fontSize: "0.74rem", color: "#64748b" }}>
+              <span>{s.shortName || "उत्तर प्रदेश बैंक मित्र संघ"}</span>
+              <span>Date:- {formattedAppDate}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div style={{
+          padding: "12px 18px", borderTop: "1px solid #e2e8f0", background: "#f8fafc",
+          display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap"
+        }}>
+          <button type="button" className="btn btn-accent" onClick={() => downloadMembershipFormPdf(member, state, null, lang)} style={{ fontWeight: 800 }}>
+            ⬇️ {t(lang, "PDF डाउनलोड करें", "Download PDF")}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handlePrintPdf} style={{ fontWeight: 800 }}>
+            🖨️ {t(lang, "प्रिंट करें", "Print")}
+          </button>
+          <button type="button" className="btn btn-outline" onClick={onClose}>
+            {t(lang, "बंद करें", "Close")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MembersApprovalTab({ portal, run, setTab }) {
   const { state, session, showToast, lang, refresh } = portal;
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [busyId, setBusyId] = useState(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [previewMember, setPreviewMember] = useState(null);
+
+  const pendingMembers = (state.members || []).filter((m) => m.status === "pending");
+  const allSelected = pendingMembers.length > 0 && selectedIds.length === pendingMembers.length;
+
+  function toggleAll(checked) {
+    setSelectedIds(checked ? pendingMembers.map((m) => m.id) : []);
+  }
+
+  function toggleOne(id) {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function approveOne(id) {
+    setBusyId(id);
+    try {
+      await api(`/api/members/${id}/approve`, { method: "POST", session });
+      showToast(t(lang, "✅ सदस्य आवेदन अनुमोदित किया गया!", "✅ Member application approved!"));
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function rejectOne(id) {
+    if (!window.confirm(t(lang, "क्या आप इस आवेदन को अस्वीकार करना चाहते हैं?", "Are you sure you want to reject this application?"))) return;
+    setBusyId(id);
+    try {
+      await api(`/api/members/${id}/reject`, { method: "POST", session });
+      showToast(t(lang, "❌ आवेदन अस्वीकार कर दिया गया।", "❌ Application rejected."));
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function approveBulk(idsToApprove) {
+    setBulkBusy(true);
+    try {
+      const res = await api("/api/members/approve-bulk", {
+        method: "POST",
+        session,
+        body: { ids: idsToApprove }
+      });
+      showToast(t(lang, `✅ ${res.approvedCount} आवेदन अनुमोदित हो गए!`, `✅ ${res.approvedCount} applications approved!`));
+      setSelectedIds([]);
+      await refresh();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {/* Top Action Card matching Image 9 */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "20px 24px", borderTop: "4px solid #f59e0b" }}>
+        <h3 style={{ margin: "0 0 6px", color: "var(--primary)", fontSize: "1.18rem", fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>✅</span>
+          <span>{t(lang, "सदस्य अनुमोदन (Approval Queue)", "Members Approval Queue")}</span>
+        </h3>
+        <p style={{ margin: "0 0 14px", color: "#64748b", fontSize: "0.86rem" }}>
+          {t(
+            lang,
+            "हर आवेदन का पूरा विवरण जाँचने के बाद ही अनुमोदित करें। एक-एक, चुनिंदा (multiple) अथवा सभी को एक साथ अनुमोदित किया जा सकता है।",
+            "Review all application details before approving. Approve individually, selected applications, or all pending applications at once."
+          )}
+        </p>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: "0.86rem", cursor: "pointer" }}>
+            <input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} disabled={pendingMembers.length === 0} />
+            <span>{t(lang, "सभी चुनें", "Select All")}</span>
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={bulkBusy || selectedIds.length === 0}
+            onClick={() => approveBulk(selectedIds)}
+          >
+            ☑️ {t(lang, `चयनित अनुमोदित करें (${selectedIds.length})`, `Approve Selected (${selectedIds.length})`)}
+          </button>
+          <button
+            type="button"
+            className="btn btn-accent btn-sm"
+            disabled={bulkBusy || pendingMembers.length === 0}
+            onClick={() => approveBulk([])}
+          >
+            ✅ {t(lang, `सभी को अनुमोदित करें (${pendingMembers.length})`, `Approve All (${pendingMembers.length})`)}
+          </button>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => refresh()}>
+            🔄 {t(lang, "रीफ्रेश", "Refresh")}
+          </button>
+        </div>
+      </div>
+
+      {/* Empty State */}
+      {pendingMembers.length === 0 && (
+        <div className="card-panel" style={{ textAlign: "center", padding: "38px 20px", borderRadius: 16 }}>
+          <div style={{ fontSize: "2.4rem", marginBottom: 8 }}>🎉</div>
+          <h4 style={{ margin: "0 0 6px", color: "var(--primary)", fontWeight: 800 }}>
+            {t(lang, "कोई लंबित आवेदन नहीं है!", "No Pending Applications!")}
+          </h4>
+          <p style={{ margin: 0, color: "#64748b", fontSize: "0.88rem" }}>
+            {t(lang, "सभी सदस्यता आवेदन अनुमोदित हो चुके हैं।", "All membership applications have been reviewed.")}
+          </p>
+        </div>
+      )}
+
+      {/* Pending Member Cards matching Image 9 */}
+      {pendingMembers.map((m) => (
+        <div key={m.id} className="card-panel" style={{ borderRadius: 16, padding: "18px 22px", border: "1.5px solid #fde68a", background: "#fffdf8" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleOne(m.id)} style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <div style={{
+                width: 58, height: 70, border: "1.5px dashed #cbd5e1", borderRadius: 8,
+                display: "grid", placeItems: "center", overflow: "hidden", background: "#fff", flexShrink: 0
+              }}>
+                {m.photoUrl ? (
+                  <img src={m.photoUrl} alt={m.nameEn} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: "0.7rem", color: "#94a3b8", textAlign: "center" }}>फोटो<br />नहीं</span>
+                )}
+              </div>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: "1.08rem", color: "#0b1a30" }}>{m.nameHi || m.nameEn}</div>
+                <div style={{ fontSize: "0.85rem", color: "#475569", fontWeight: 700 }}>{m.nameEn}</div>
+                <div style={{ fontSize: "0.8rem", color: "#b45309", fontWeight: 800, marginTop: 2 }}>{m.memberCategory || "General Member (सक्रिय सदस्य)"}</div>
+                <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 2 }}>
+                  🪪 {m.memberCode} | ⏳ {m.joinedDate || m.applicationDate} {t(lang, "को आवेदन", "Applied")}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn btn-accent btn-sm"
+                disabled={busyId === m.id}
+                onClick={() => approveOne(m.id)}
+                style={{ fontWeight: 800 }}
+              >
+                ✅ {t(lang, "अनुमोदित करें", "Approve")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={busyId === m.id}
+                onClick={() => rejectOne(m.id)}
+                style={{ background: "#fee2e2", color: "#b91c1c", border: "1px solid #fecaca", fontWeight: 800 }}
+              >
+                ✕ {t(lang, "अस्वीकार करें", "Reject")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setPreviewMember(m)}
+                style={{ fontWeight: 800 }}
+              >
+                📄 {t(lang, "फॉर्म देखें", "View Form")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => downloadMembershipFormPdf(m, state, showToast, lang)}
+                style={{ fontWeight: 800, background: "#eff6ff", color: "#1e40af", borderColor: "#bfdbfe" }}
+              >
+                ⬇️ {t(lang, "PDF सेव करें", "Save PDF")}
+              </button>
+            </div>
+          </div>
+
+          {/* 4-column Detail Grid matching Image 9 */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px 16px", fontSize: "0.82rem", color: "#334155", marginBottom: 12 }}>
+            <div><b>{t(lang, "पिता का नाम:", "Father:")}</b> {m.fatherName || "—"}</div>
+            <div><b>{t(lang, "उम्र:", "Age:")}</b> {m.age || "—"}</div>
+            <div><b>{t(lang, "मोबाइल:", "Mobile:")}</b> {m.mobile || "—"}</div>
+            <div><b>{t(lang, "ईमेल:", "Email:")}</b> {m.email || "—"}</div>
+            <div><b>{t(lang, "जनपद:", "District:")}</b> {m.district || "—"}</div>
+            <div><b>{t(lang, "केंद्र का पता (ब्लॉक):", "Center/Block:")}</b> {m.block || "—"}</div>
+            <div><b>{t(lang, "बैंक:", "Bank:")}</b> {m.bankName || "—"}</div>
+            <div><b>KO CODE:</b> {m.koCode || "—"}</div>
+            <div><b>{t(lang, "संस्था/मालिक:", "Institution:")}</b> {m.livelihoodInstitution || "—"}</div>
+            <div><b>{t(lang, "कार्य में पद:", "Work Role:")}</b> {m.livelihoodDesignation || "—"}</div>
+            <div><b>{t(lang, "अवधि:", "Duration:")}</b> {m.livelihoodDuration || "—"}</div>
+            <div><b>{t(lang, "वेतन:", "Remuneration:")}</b> {m.livelihoodRemuneration || "—"}</div>
+            <div style={{ gridColumn: "1 / -1" }}><b>{t(lang, "पता:", "Address:")}</b> {m.localAddress || "—"}</div>
+          </div>
+
+          {/* Fee Summary Footer Bar */}
+          <div style={{
+            background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8,
+            padding: "8px 14px", fontSize: "0.82rem", fontWeight: 800, color: "#166534"
+          }}>
+            💰 {t(
+              lang,
+              `प्रवेश शुल्क ₹${m.entryFeePaid ?? (state.settings?.entryFee ?? 10)} + ₹${m.monthlyRatePaid ?? (state.settings?.monthlyMembershipFee ?? 20)} × ${m.remainingMonthsPaid ?? "—"} माह = ₹${m.feePaid || 0} | वैधता: ${m.validUntil || "—"} | भुगतान: लंबित (सत्यापन बाकी)${m.utrNumber ? ` | UTR: ${m.utrNumber}` : ""}`,
+              `Entry ₹${m.entryFeePaid ?? 10} + ₹${m.monthlyRatePaid ?? 20} × ${m.remainingMonthsPaid ?? "—"} mo = ₹${m.feePaid || 0} | Validity: ${m.validUntil || "—"} | Payment: Pending Verification${m.utrNumber ? ` | UTR: ${m.utrNumber}` : ""}`
+            )}
+          </div>
+        </div>
+      ))}
+
+      {previewMember && (
+        <MembershipFormModal
+          member={previewMember}
+          state={state}
+          lang={lang}
+          onClose={() => setPreviewMember(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function HideShowTab({ state, saveSettings, lang }) {
+  const s = state.settings || {};
+  const stx = s.sectionTexts || {};
+  const hb = s.headerButtons || {};
+  const nav = s.navItems || [];
+  const [savingKey, setSavingKey] = useState(null);
+
+  const isNavVisible = (id) => {
+    const found = nav.find((x) => x.id === id);
+    return found ? found.visible !== false : true;
+  };
+
+  const ITEMS = [
+    {
+      key: "campaignDeck",
+      labelHi: "अभियान / कैंपेन डेक",
+      labelEn: "Campaign Deck",
+      visible: stx.campaignDeckVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { campaignDeckVisible: nextVal } })
+    },
+    {
+      key: "statBoxes",
+      labelHi: "4 आँकड़े बॉक्स",
+      labelEn: "4 Stat Boxes",
+      visible: stx.statBoxesVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { statBoxesVisible: nextVal } })
+    },
+    {
+      key: "circulars",
+      labelHi: "बैंक मित्र सर्कुलर",
+      labelEn: "Circulars",
+      visible: stx.homeCircularsVisible !== false && isNavVisible("circulars"),
+      apply: (nextVal) => ({
+        sectionTexts: { homeCircularsVisible: nextVal },
+        navItems: nav.map((n) => (n.id === "circulars" ? { ...n, visible: nextVal } : n))
+      })
+    },
+    {
+      key: "portals",
+      labelHi: "महत्वपूर्ण पोर्टल लिंक",
+      labelEn: "Important Portals",
+      visible: stx.homePortalsVisible !== false && isNavVisible("portals"),
+      apply: (nextVal) => ({
+        sectionTexts: { homePortalsVisible: nextVal },
+        navItems: nav.map((n) => (n.id === "portals" ? { ...n, visible: nextVal } : n))
+      })
+    },
+    {
+      key: "demands",
+      labelHi: "मांगें / ज्ञापन",
+      labelEn: "Demands",
+      visible: stx.homeDemandsVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { homeDemandsVisible: nextVal } })
+    },
+    {
+      key: "members",
+      labelHi: "सदस्य निर्देशिका",
+      labelEn: "Members Directory",
+      visible: stx.homeMembersVisible !== false && isNavVisible("members"),
+      apply: (nextVal) => ({
+        sectionTexts: { homeMembersVisible: nextVal },
+        navItems: nav.map((n) => (n.id === "members" ? { ...n, visible: nextVal } : n))
+      })
+    },
+    {
+      key: "news",
+      labelHi: "समाचार व सोशल हब",
+      labelEn: "News & Social Hub",
+      visible: stx.homeNewsVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { homeNewsVisible: nextVal } })
+    },
+    {
+      key: "join",
+      labelHi: "सदस्यता पंजीकरण (Join)",
+      labelEn: "Membership Join Page",
+      visible: hb.joinVisible !== false && isNavVisible("join"),
+      apply: (nextVal) => ({
+        headerButtons: { joinVisible: nextVal },
+        sectionTexts: { floatingJoinVisible: nextVal },
+        navItems: nav.map((n) => (n.id === "join" ? { ...n, visible: nextVal } : n))
+      })
+    },
+    {
+      key: "certificates",
+      labelHi: "प्रमाण-पत्र (About Us)",
+      labelEn: "Certificates",
+      visible: stx.certificatesVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { certificatesVisible: nextVal } })
+    },
+    {
+      key: "donation",
+      labelHi: "डोनेशन बटन व पेज",
+      labelEn: "Donation Button & Page",
+      visible: hb.donationVisible !== false,
+      apply: (nextVal) => ({ headerButtons: { donationVisible: nextVal } })
+    },
+    {
+      key: "grievance",
+      labelHi: "शिकायत निवारण",
+      labelEn: "Grievance Redressal",
+      visible: s.enableGrievanceModule !== false && isNavVisible("grievance"),
+      apply: (nextVal) => ({
+        enableGrievanceModule: nextVal,
+        navItems: nav.map((n) => (n.id === "grievance" ? { ...n, visible: nextVal } : n))
+      })
+    },
+    {
+      key: "ticker",
+      labelHi: "स्क्रॉलिंग टिकर",
+      labelEn: "Scrolling Ticker",
+      visible: stx.tickerVisible !== false,
+      apply: (nextVal) => ({ sectionTexts: { tickerVisible: nextVal } })
+    }
+  ];
+
+  async function toggleItem(item) {
+    setSavingKey(item.key);
+    const nextVal = !item.visible;
+    await saveSettings(
+      item.apply(nextVal),
+      t(lang, `${item.labelHi} ${nextVal ? "दिखाया गया" : "छिपाया गया"}`, `${item.labelEn} is now ${nextVal ? "visible" : "hidden"}`)
+    );
+    setSavingKey(null);
+  }
+
+  return (
+    <div className="card-panel" style={{ borderRadius: 16, padding: "22px 26px" }}>
+      <h3 style={{ margin: "0 0 6px", color: "var(--primary)", fontSize: "1.18rem", fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>👁️</span>
+        <span>{t(lang, "दिखाएँ / छिपाएँ (एक ही स्थान से)", "Show / Hide Website Pages & Sections")}</span>
+      </h3>
+      <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: "0.86rem" }}>
+        {t(
+          lang,
+          "जो भी वस्तु यहाँ छिपायी जाएगी, वह वेबसाइट के हर स्थान से (मुख्य मेनू, होम पेज, बटन — सब जगह से) स्वतः गायब हो जाएगी।",
+          "Any page or section hidden here will automatically disappear everywhere across the website (navigation menu, homepage, and buttons)."
+        )}
+      </p>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {ITEMS.map((item) => (
+          <div
+            key={item.key}
+            style={{
+              background: item.visible ? "#f0fdf4" : "#fef2f2",
+              border: `1.5px solid ${item.visible ? "#bbf7d0" : "#fecaca"}`,
+              borderRadius: 12,
+              padding: "12px 16px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 800, fontSize: "0.94rem", color: "#0b1a30" }}>{item.labelHi}</div>
+              <div style={{ fontSize: "0.78rem", color: "#64748b", fontWeight: 600 }}>{item.labelEn}</div>
+            </div>
+            <button
+              type="button"
+              disabled={savingKey === item.key}
+              onClick={() => toggleItem(item)}
+              style={{
+                background: item.visible ? "#0b1a30" : "#dc2626",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                padding: "7px 14px",
+                fontWeight: 800,
+                fontSize: "0.82rem",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                minWidth: 118,
+                justifyContent: "center"
+              }}
+            >
+              <span>{item.visible ? "👁️" : "🚫"}</span>
+              <span>{item.visible ? t(lang, "दिख रहा है", "Visible") : t(lang, "छिपा हुआ है", "Hidden")}</span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BankQrTab({ state, saveSettings, session, showToast, lang }) {
+  const s = state.settings || {};
+  const [memBank, setMemBank] = useState({
+    bankAccountName: s.bankAccountName || "Uttar Pradesh Bank Mitra Sangh",
+    bankAccountNumber: s.bankAccountNumber || "3984002100088412",
+    bankIfsc: s.bankIfsc || "SBIN0000125",
+    bankBranch: s.bankBranch || "Hazratganj Main Branch, Lucknow",
+    upiId: s.upiId || "upbms.sangh@sbi",
+    upiPayeeName: s.upiPayeeName || "Uttar Pradesh Bank Mitra Sangh",
+    qrSource: s.qrSource || "auto",
+    qrImageUrl: s.qrImageUrl || "",
+    qrCaptionHi: s.qrCaptionHi || "आधिकारिक भुगतान QR — उत्तर प्रदेश बैंक मित्र संघ",
+    qrCaptionEn: s.qrCaptionEn || "Official Payment QR — UP Bank Mitra Sangh",
+    qrShowInMembership: s.qrShowInMembership !== false,
+    qrShowInReceipt: s.qrShowInReceipt !== false
+  });
+
+  const [donBank, setDonBank] = useState({
+    donationBankAccountName: s.donationBankAccountName || s.bankAccountName || "Uttar Pradesh Bank Mitra Sangh",
+    donationBankAccountNumber: s.donationBankAccountNumber || s.bankAccountNumber || "3984002100088412",
+    donationBankIfsc: s.donationBankIfsc || s.bankIfsc || "SBIN0000125",
+    donationBankBranch: s.donationBankBranch || s.bankBranch || "Hazratganj Main Branch, Lucknow",
+    donationUpiId: s.donationUpiId || s.upiId || "upbms.sangh@sbi",
+    donationUpiPayeeName: s.donationUpiPayeeName || s.upiPayeeName || "Uttar Pradesh Bank Mitra Sangh",
+    donationQrSource: s.donationQrSource || "auto",
+    donationQrImageUrl: s.donationQrImageUrl || "",
+    donationQrCaptionHi: s.donationQrCaptionHi || "स्कैन कर आधिकारिक खाते में सहयोग करें",
+    donationQrCaptionEn: s.donationQrCaptionEn || "Scan to Contribute to Official Account",
+    donationQrShowInDonation: s.donationQrShowInDonation !== false,
+    donationQrShowInReceipt: s.donationQrShowInReceipt !== false
+  });
+
+  const [savingMem, setSavingMem] = useState(false);
+  const [savingDon, setSavingDon] = useState(false);
+
+  async function saveMembershipQr(e) {
+    e.preventDefault();
+    setSavingMem(true);
+    await saveSettings(memBank, t(lang, "सदस्यता बैंक, UPI व QR सेटिंग्स सेव हो गईं", "Membership Bank, UPI & QR settings saved"));
+    setSavingMem(false);
+  }
+
+  async function saveDonationQr(e) {
+    e.preventDefault();
+    setSavingDon(true);
+    await saveSettings(donBank, t(lang, "डोनेशन बैंक, UPI व QR सेटिंग्स सेव हो गईं", "Donation Bank, UPI & QR settings saved"));
+    setSavingDon(false);
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 24 }}>
+      {/* SECTION 1: MEMBERSHIP BANK, UPI & QR */}
+      <form className="card-panel" onSubmit={saveMembershipQr} style={{ borderRadius: 16, padding: "24px 26px", borderTop: "4px solid #2563eb" }}>
+        <h3 style={{ margin: "0 0 6px", color: "var(--primary)", fontWeight: 900, fontSize: "1.18rem" }}>
+          💳 {t(lang, "1. सदस्यता भुगतान — बैंक, UPI एवं QR प्रबंधन", "1. Membership Payment — Bank, UPI & QR Settings")}
+        </h3>
+        <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: "0.85rem" }}>
+          {t(lang, "यह बैंक खाता, UPI ID व QR कोड ऑनलाइन सदस्यता पंजीकरण फॉर्म व सदस्यता रसीद में दिखेगा।", "These Bank, UPI & QR details appear on the Membership Registration Form and Receipts.")}
+        </p>
+
+        <div className="form-grid" style={{ marginBottom: 18 }}>
+          <Field label={t(lang, "खाता नाम (Account Name)", "Account Name")}>
+            <Inp value={memBank.bankAccountName} onChange={(e) => setMemBank({ ...memBank, bankAccountName: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "बैंक खाता संख्या (Account Number)", "Bank Account Number")}>
+            <Inp value={memBank.bankAccountNumber} onChange={(e) => setMemBank({ ...memBank, bankAccountNumber: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "IFSC कोड", "IFSC Code")}>
+            <Inp value={memBank.bankIfsc} onChange={(e) => setMemBank({ ...memBank, bankIfsc: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "शाखा (Branch)", "Branch")}>
+            <Inp value={memBank.bankBranch} onChange={(e) => setMemBank({ ...memBank, bankBranch: e.target.value })} />
+          </Field>
+          <Field label={t(lang, "UPI ID (सदस्यता हेतु)", "UPI ID (for Membership)")}>
+            <Inp value={memBank.upiId} onChange={(e) => setMemBank({ ...memBank, upiId: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "UPI प्राप्तकर्ता नाम", "UPI Payee Name")}>
+            <Inp value={memBank.upiPayeeName} onChange={(e) => setMemBank({ ...memBank, upiPayeeName: e.target.value })} />
+          </Field>
+        </div>
+
+        <div style={{ background: "#f8fafc", border: "1.5px solid #cbd5e1", borderRadius: 12, padding: 16 }}>
+          <div style={{ fontWeight: 900, color: "#0b1a30", marginBottom: 10 }}>
+            📱 {t(lang, "भुगतान QR कोड — अपनी QR छवि अपलोड करें", "Payment QR Code — Upload Custom QR Image")}
+          </div>
+          <div className="form-grid">
+            <Field label={t(lang, "QR का स्रोत", "QR Source")}>
+              <select className="form-control" value={memBank.qrSource} onChange={(e) => setMemBank({ ...memBank, qrSource: e.target.value })}>
+                <option value="auto">{t(lang, "स्वतः (UPI ID से QR बनेगा)", "Auto (Generate from UPI ID)")}</option>
+                <option value="upload">{t(lang, "अपलोड की गई QR छवि (Uploaded Image)", "Uploaded QR Image")}</option>
+              </select>
+            </Field>
+            <Field label={t(lang, "QR छवि अपलोड (PNG / JPG)", "Upload QR Image (PNG / JPG)")}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    const url = await uploadFile(f, session, { folder: "upbms/qr" });
+                    setMemBank((prev) => ({ ...prev, qrImageUrl: url, qrSource: "upload" }));
+                    showToast(t(lang, "सदस्यता QR छवि अपलोड हो गई", "Membership QR uploaded"));
+                  }
+                }}
+              />
+            </Field>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 12, margin: "12px 0" }}>
+            {memBank.qrSource === "upload" && memBank.qrImageUrl ? (
+              <img src={memBank.qrImageUrl} alt="Membership QR" style={{ width: 80, height: 80, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid #cbd5e1" }} />
+            ) : (
+              <div style={{ width: 80, height: 80, border: "1.5px dashed #cbd5e1", borderRadius: 8, display: "grid", placeItems: "center", fontSize: "0.7rem", textAlign: "center", color: "#64748b", background: "#fff" }}>
+                स्वतः QR<br />(UPI ID से)
+              </div>
+            )}
+            <div style={{ fontSize: "0.84rem", color: "#334155" }}>
+              <div><b>UPI ID:</b> {memBank.upiId}</div>
+              <div><b>{t(lang, "QR कैप्शन:", "QR Caption:")}</b> {t(lang, memBank.qrCaptionHi, memBank.qrCaptionEn)}</div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <Field label={t(lang, "QR कैप्शन (हिंदी)", "QR Caption (Hindi)")}>
+              <Inp value={memBank.qrCaptionHi} onChange={(e) => setMemBank({ ...memBank, qrCaptionHi: e.target.value })} />
+            </Field>
+            <Field label={t(lang, "QR Caption (English)", "QR Caption (English)")}>
+              <Inp value={memBank.qrCaptionEn} onChange={(e) => setMemBank({ ...memBank, qrCaptionEn: e.target.value })} />
+            </Field>
+            <Field label={t(lang, "सदस्यता फॉर्म में दिखाएँ", "Show in Membership Form")}>
+              <select className="form-control" value={memBank.qrShowInMembership ? "yes" : "no"} onChange={(e) => setMemBank({ ...memBank, qrShowInMembership: e.target.value === "yes" })}>
+                <option value="yes">{t(lang, "हाँ (Yes)", "Yes")}</option>
+                <option value="no">{t(lang, "नहीं (No)", "No")}</option>
+              </select>
+            </Field>
+            <Field label={t(lang, "रसीद (Receipt) में दिखाएँ", "Show in Receipt")}>
+              <select className="form-control" value={memBank.qrShowInReceipt ? "yes" : "no"} onChange={(e) => setMemBank({ ...memBank, qrShowInReceipt: e.target.value === "yes" })}>
+                <option value="yes">{t(lang, "हाँ (Yes)", "Yes")}</option>
+                <option value="no">{t(lang, "नहीं (No)", "No")}</option>
+              </select>
+            </Field>
+          </div>
+        </div>
+
+        <button type="submit" className="btn btn-accent" disabled={savingMem} style={{ marginTop: 16, fontWeight: 800 }}>
+          {savingMem ? t(lang, "सेव हो रहा है...", "Saving...") : `💾 ${t(lang, "सदस्यता बैंक व QR सेव करें", "Save Membership Bank & QR")}`}
+        </button>
+      </form>
+
+      {/* SECTION 2: DONATION BANK, UPI & QR */}
+      <form className="card-panel" onSubmit={saveDonationQr} style={{ borderRadius: 16, padding: "24px 26px", borderTop: "4px solid #16a34a" }}>
+        <h3 style={{ margin: "0 0 6px", color: "#15803d", fontWeight: 900, fontSize: "1.18rem" }}>
+          🤝 {t(lang, "2. सहयोग / डोनेशन भुगतान — बैंक, UPI एवं QR प्रबंधन", "2. Donation Payment — Bank, UPI & QR Settings")}
+        </h3>
+        <p style={{ margin: "0 0 18px", color: "#64748b", fontSize: "0.85rem" }}>
+          {t(lang, "यह बैंक खाता, UPI ID व QR कोड केवल सहयोग राशि / डोनेशन पेज पर प्रदर्शित होगा।", "These Bank, UPI & QR details appear exclusively on the Contribution / Donation Portal.")}
+        </p>
+
+        <div className="form-grid" style={{ marginBottom: 18 }}>
+          <Field label={t(lang, "डोनेशन खाता नाम", "Donation Account Name")}>
+            <Inp value={donBank.donationBankAccountName} onChange={(e) => setDonBank({ ...donBank, donationBankAccountName: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "डोनेशन खाता संख्या", "Donation Account Number")}>
+            <Inp value={donBank.donationBankAccountNumber} onChange={(e) => setDonBank({ ...donBank, donationBankAccountNumber: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "IFSC कोड", "IFSC Code")}>
+            <Inp value={donBank.donationBankIfsc} onChange={(e) => setDonBank({ ...donBank, donationBankIfsc: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "शाखा (Branch)", "Branch")}>
+            <Inp value={donBank.donationBankBranch} onChange={(e) => setDonBank({ ...donBank, donationBankBranch: e.target.value })} />
+          </Field>
+          <Field label={t(lang, "डोनेशन UPI ID", "Donation UPI ID")}>
+            <Inp value={donBank.donationUpiId} onChange={(e) => setDonBank({ ...donBank, donationUpiId: e.target.value })} required />
+          </Field>
+          <Field label={t(lang, "UPI प्राप्तकर्ता नाम", "Donation Payee Name")}>
+            <Inp value={donBank.donationUpiPayeeName} onChange={(e) => setDonBank({ ...donBank, donationUpiPayeeName: e.target.value })} />
+          </Field>
+        </div>
+
+        <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 12, padding: 16 }}>
+          <div style={{ fontWeight: 900, color: "#166534", marginBottom: 10 }}>
+            📱 {t(lang, "डोनेशन QR कोड — अपनी QR छवि अपलोड करें", "Donation QR Code — Upload Custom QR Image")}
+          </div>
+          <div className="form-grid">
+            <Field label={t(lang, "QR का स्रोत", "QR Source")}>
+              <select className="form-control" value={donBank.donationQrSource} onChange={(e) => setDonBank({ ...donBank, donationQrSource: e.target.value })}>
+                <option value="auto">{t(lang, "स्वतः (UPI ID से QR बनेगा)", "Auto (Generate from UPI ID)")}</option>
+                <option value="upload">{t(lang, "अपलोड की गई QR छवि (Uploaded Image)", "Uploaded QR Image")}</option>
+              </select>
+            </Field>
+            <Field label={t(lang, "QR छवि अपलोड (PNG / JPG)", "Upload QR Image (PNG / JPG)")}>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    const url = await uploadFile(f, session, { folder: "upbms/qr" });
+                    setDonBank((prev) => ({ ...prev, donationQrImageUrl: url, donationQrSource: "upload" }));
+                    showToast(t(lang, "डोनेशन QR छवि अपलोड हो गई", "Donation QR uploaded"));
+                  }
+                }}
+              />
+            </Field>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16, background: "#ffffff", border: "1px solid #bbf7d0", borderRadius: 10, padding: 12, margin: "12px 0" }}>
+            {donBank.donationQrSource === "upload" && donBank.donationQrImageUrl ? (
+              <img src={donBank.donationQrImageUrl} alt="Donation QR" style={{ width: 80, height: 80, objectFit: "contain", background: "#fff", borderRadius: 6, border: "1px solid #cbd5e1" }} />
+            ) : (
+              <div style={{ width: 80, height: 80, border: "1.5px dashed #86efac", borderRadius: 8, display: "grid", placeItems: "center", fontSize: "0.7rem", textAlign: "center", color: "#15803d", background: "#f0fdf4" }}>
+                स्वतः QR<br />(UPI ID से)
+              </div>
+            )}
+            <div style={{ fontSize: "0.84rem", color: "#334155" }}>
+              <div><b>Donation UPI ID:</b> {donBank.donationUpiId}</div>
+              <div><b>{t(lang, "QR कैप्शन:", "QR Caption:")}</b> {t(lang, donBank.donationQrCaptionHi, donBank.donationQrCaptionEn)}</div>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <Field label={t(lang, "QR कैप्शन (हिंदी)", "QR Caption (Hindi)")}>
+              <Inp value={donBank.donationQrCaptionHi} onChange={(e) => setDonBank({ ...donBank, donationQrCaptionHi: e.target.value })} />
+            </Field>
+            <Field label={t(lang, "QR Caption (English)", "QR Caption (English)")}>
+              <Inp value={donBank.donationQrCaptionEn} onChange={(e) => setDonBank({ ...donBank, donationQrCaptionEn: e.target.value })} />
+            </Field>
+            <Field label={t(lang, "सहयोग (Donation) पेज में दिखाएँ", "Show in Donation Page")}>
+              <select className="form-control" value={donBank.donationQrShowInDonation ? "yes" : "no"} onChange={(e) => setDonBank({ ...donBank, donationQrShowInDonation: e.target.value === "yes" })}>
+                <option value="yes">{t(lang, "हाँ (Yes)", "Yes")}</option>
+                <option value="no">{t(lang, "नहीं (No)", "No")}</option>
+              </select>
+            </Field>
+            <Field label={t(lang, "रसीद (Receipt) में दिखाएँ", "Show in Receipt")}>
+              <select className="form-control" value={donBank.donationQrShowInReceipt ? "yes" : "no"} onChange={(e) => setDonBank({ ...donBank, donationQrShowInReceipt: e.target.value === "yes" })}>
+                <option value="yes">{t(lang, "हाँ (Yes)", "Yes")}</option>
+                <option value="no">{t(lang, "नहीं (No)", "No")}</option>
+              </select>
+            </Field>
+          </div>
+        </div>
+
+        <button type="submit" className="btn btn-primary" disabled={savingDon} style={{ marginTop: 16, fontWeight: 800 }}>
+          {savingDon ? t(lang, "सेव हो रहा है...", "Saving...") : `💾 ${t(lang, "डोनेशन बैंक व QR सेव करें", "Save Donation Bank & QR")}`}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function FormTextTab({ state, saveSettings, session, showToast, lang }) {
+  const s = state.settings || {};
+  const officers = s.signatories || [];
+  const initCfg = s.membershipFormConfig || {};
+  const [cfg, setCfg] = useState({
+    logoUrl: initCfg.logoUrl || s.logoUrl || "/images/upbms-crest.svg",
+    categoryHi: initCfg.categoryHi || "साधारण सदस्य (सक्रिय बैंक मित्र)",
+    categoryEn: initCfg.categoryEn || "Ordinary Member (Active Bank Mitra)",
+    applicantSigSource: initCfg.applicantSigSource || "uploaded",
+    applicantSigLabel: initCfg.applicantSigLabel || "प्रार्थी के हस्ताक्षर/अंगूठे का निशान",
+    certifiedByMode: initCfg.certifiedByMode || "auto",
+    certifyingOfficerId: initCfg.certifyingOfficerId || officers[0]?.id || "",
+    showDesignation: initCfg.showDesignation || "yes",
+    autoFillDate: initCfg.autoFillDate || "yes",
+    certifierTitle: initCfg.certifierTitle || "प्रमाणित कर्ता",
+    certifierAuthority: initCfg.certifierAuthority || "प्रमाणित कर्ता — संघ पदाधिकारी",
+    customCertifierSigUrl: initCfg.customCertifierSigUrl || "",
+    formTitleHi: initCfg.formTitleHi || "सदस्यता — फॉर्म",
+    formTitleEn: initCfg.formTitleEn || "Membership — Form",
+    unionNameHi: initCfg.unionNameHi || `यूनियन का नाम:- ${s.orgNameHi || "उत्तर प्रदेश बैंक मित्र संघ, लखनऊ"}`,
+    unionNameEn: initCfg.unionNameEn || `Union Name:- ${s.orgNameEn || "Uttar Pradesh Bank Mitra Sangh, Lucknow"}`,
+    fieldLocalAddress: initCfg.fieldLocalAddress || "स्थानीय निजी पता-",
+    fieldLocalAddressEn: initCfg.fieldLocalAddressEn || "Local Private Address-",
+    fieldBlock: initCfg.fieldBlock || "केंद्र का पता (ब्लॉक)-",
+    fieldDistrict: initCfg.fieldDistrict || "जनपद-",
+    fieldBank: initCfg.fieldBank || "संबद्ध बैंक-",
+    fieldKoCode: initCfg.fieldKoCode || "KO CODE-",
+    salutation: initCfg.salutation || "सेवा में, महामंत्री जी,",
+    bodyText: initCfg.bodyText || "महोदय, कृपया मुझे उपर्युक्त यूनियन का साधारण/विशिष्ट सदस्य बना लें। मैंने यूनियन के विधान व उसके उप नियम समझ लिए हैं और मैं प्रतिज्ञा करता हूँ/करती हूँ कि मैं उनका पालन करूँगा।",
+    feeLine: initCfg.feeLine || "मैं प्रवेश-शुल्क तथा अपने वार्षिक चन्दे की पहली किस्त के रूप में निर्धारित शुल्क जमा करता हूँ।",
+    fieldName: initCfg.fieldName || "प्रार्थी का पूरा नाम-",
+    fieldFather: initCfg.fieldFather || "पिता का नाम-",
+    fieldAge: initCfg.fieldAge || "उम्र-",
+    livelihoodHeading: initCfg.livelihoodHeading || "जीविका वृत्ति सम्बन्धी विवरण-",
+    livelihood1: initCfg.livelihood1 || "(1) संस्था या मालिक का नाम जिनके कर्मचारी हो-",
+    livelihood2: initCfg.livelihood2 || "(2) कार्य में पद-",
+    livelihood3: initCfg.livelihood3 || "(3) नौकरी/कार्य की अवधि-",
+    livelihood4: initCfg.livelihood4 || "(4) मासिक/दैनिक वेतन-",
+    fieldDate: initCfg.fieldDate || "तारीख-",
+    regardsText: initCfg.regardsText || "भवदीय",
+    certifierNameLabel: initCfg.certifierNameLabel || "(1) नाम-",
+    certifierSigLabel: initCfg.certifierSigLabel || "(2) हस्ताक्षर",
+    certifierDateLabel: initCfg.certifierDateLabel || "(3) तारीख"
+  });
+  const [previewSample, setPreviewSample] = useState(null);
+
+  const sampleMember = {
+    id: "sample-001",
+    memberCode: "UPBMS-2026-SAMPLE",
+    nameHi: "श्री सुरेश चंद्र मौर्य",
+    nameEn: "Shri Suresh Chandra Maurya",
+    fatherName: "श्री राम प्रसाद मौर्य",
+    age: "34",
+    localAddress: "मकान नं. 124, गोमती नगर, लखनऊ - 226010",
+    block: "हज़रतगंज (Hazratganj)",
+    district: "लखनऊ (Lucknow)",
+    bankName: "State Bank of India (SBI)",
+    koCode: "SBI-LKO-1092",
+    livelihoodInstitution: "State Bank of India / CSC e-Governance",
+    livelihoodDesignation: "Bank Mitra / CSP",
+    livelihoodDuration: "3 years",
+    livelihoodRemuneration: "Rs. 8,000 per month",
+    applicationDate: today(),
+    signatoryId: cfg.certifyingOfficerId || officers[0]?.id
+  };
+
+  async function saveCfg(msg) {
+    await saveSettings({ membershipFormConfig: cfg }, msg);
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 18 }}>
+      {/* Card 1: Preview & Sample PDF */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px", border: "1.5px solid #bfdbfe", background: "#f8faff" }}>
+        <div style={{ fontWeight: 900, color: "#0b1a30", fontSize: "1.02rem", marginBottom: 4 }}>
+          🔘 {t(lang, "फॉर्म PDF प्रीव्यू (नमूना डेटा से)", "Form PDF Preview (With Sample Data)")}
+        </div>
+        <div style={{ fontSize: "0.84rem", color: "#475569", marginBottom: 12 }}>
+          {t(lang, "नीचे बदलाव सेव करने के बाद 'प्रीव्यू देखें' दबाएँ — PDF कैसी बन रही है, यहीं देख लें। (यह असली सदस्य डेटा नहीं है।)", "After saving changes below, click Preview to check how the A4 PDF looks.")}
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setPreviewSample(sampleMember)}>
+            👁️ {t(lang, "प्रीव्यू देखें", "View Preview")}
+          </button>
+          <button type="button" className="btn btn-accent btn-sm" onClick={() => downloadMembershipFormPdf(sampleMember, { ...state, settings: { ...s, membershipFormConfig: cfg } }, showToast, lang)}>
+            ⬇️ {t(lang, "PDF सेव करें (नमूना)", "Save Sample PDF")}
+          </button>
+        </div>
+      </div>
+
+      {/* Card 2: Form Logo */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px" }}>
+        <div style={{ fontWeight: 900, color: "#0b1a30", fontSize: "0.98rem", marginBottom: 10 }}>
+          🖼️ {t(lang, "फॉर्म में लोगो", "Logo in Form")}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <img src={cfg.logoUrl} alt="Form Logo" style={{ width: 52, height: 52, objectFit: "contain", borderRadius: "50%", border: "1px solid #cbd5e1", padding: 2 }} />
+          <input
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                const url = await uploadFile(f, session, { folder: "upbms/logo" });
+                const next = { ...cfg, logoUrl: url };
+                setCfg(next);
+                await saveSettings({ membershipFormConfig: next }, t(lang, "फॉर्म लोगो अपडेट हो गया", "Form logo updated"));
+              }
+            }}
+          />
+        </div>
+        <div style={{ fontSize: "0.78rem", color: "#64748b", marginTop: 6 }}>
+          {t(lang, "यही लोगो सदस्यता फॉर्म PDF के ऊपर बाईं ओर छपेगा।", "This logo prints at the top-left of the Membership Form PDF.")}
+        </div>
+      </div>
+
+      {/* Card 3: Single Membership Category */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px" }}>
+        <div style={{ fontWeight: 900, color: "#0b1a30", fontSize: "0.98rem", marginBottom: 4 }}>
+          📁 {t(lang, "सदस्यता श्रेणी (केवल एक विकल्प दिखेगा)", "Membership Category (Single Option Displayed)")}
+        </div>
+        <div style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: 12 }}>
+          {t(lang, "ऑनलाइन फॉर्म में कौन-सी श्रेणी दिखे और उसका नाम क्या हो — यहीं से तय करें।", "Control the single category label displayed on the online Membership Form.")}
+        </div>
+        <div className="form-grid">
+          <Field label={t(lang, "श्रेणी का नाम (हिंदी)", "Category Name (Hindi)")}>
+            <Inp value={cfg.categoryHi} onChange={(e) => setCfg({ ...cfg, categoryHi: e.target.value })} />
+          </Field>
+          <Field label="Category Name (English)">
+            <Inp value={cfg.categoryEn} onChange={(e) => setCfg({ ...cfg, categoryEn: e.target.value })} />
+          </Field>
+        </div>
+        <button type="button" className="btn btn-accent btn-sm" style={{ marginTop: 12, fontWeight: 800 }} onClick={() => saveCfg(t(lang, "सदस्यता श्रेणी सेव हो गई", "Membership category saved"))}>
+          💾 {t(lang, "श्रेणी सेव करें", "Save Category")}
+        </button>
+      </div>
+
+      {/* Card 4: Signatures & Certifier (Yellow Card matching Image 4) */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px", background: "#fffbeb", border: "1.5px solid #fde68a" }}>
+        <div style={{ fontWeight: 900, color: "#b45309", fontSize: "1rem", marginBottom: 4 }}>
+          ✍️ {t(lang, "हस्ताक्षर एवं प्रमाणित कर्ता (स्वतः लगेंगे)", "Signatures & Certifier (Auto-Applied)")}
+        </div>
+        <div style={{ fontSize: "0.82rem", color: "#92400e", marginBottom: 14 }}>
+          {t(lang, "सदस्य जो हस्ताक्षर/अंगूठा अपलोड करता है वही फॉर्म के हस्ताक्षर स्थान पर छपेगा। प्रमाणित कर्ता (नाम, पद, हस्ताक्षर, तारीख) यहाँ सेट किए अनुसार स्वतः उसी स्थान पर आ जाएँगे।", "Configure applicant signature rendering and automatic officer attestation on the A4 form.")}
+        </div>
+        <div className="form-grid">
+          <Field label={t(lang, "प्रार्थी के हस्ताक्षर स्थान पर", "Applicant Signature Source")}>
+            <select className="form-control" value={cfg.applicantSigSource} onChange={(e) => setCfg({ ...cfg, applicantSigSource: e.target.value })}>
+              <option value="uploaded">{t(lang, "सदस्य द्वारा अपलोड किया हस्ताक्षर (सबसे अच्छा)", "Member Uploaded Signature (Best)")}</option>
+              <option value="typed">{t(lang, "सदस्य का नाम (इटैलिक)", "Member Name (Italic)")}</option>
+              <option value="none">{t(lang, "खाली छोड़ें", "Leave Blank")}</option>
+            </select>
+          </Field>
+          <Field label={t(lang, "हस्ताक्षर के नीचे लेबल", "Label Below Signature")}>
+            <Inp value={cfg.applicantSigLabel} onChange={(e) => setCfg({ ...cfg, applicantSigLabel: e.target.value })} />
+          </Field>
+          <Field label={t(lang, "प्रमाणित कर्ता (Certified By)", "Certified By")}>
+            <select className="form-control" value={cfg.certifiedByMode} onChange={(e) => setCfg({ ...cfg, certifiedByMode: e.target.value })}>
+              <option value="auto">{t(lang, "स्वतः — नीचे चुने पदाधिकारी का नाम व हस्ताक्षर", "Auto — Selected Officer Name & Signature Below")}</option>
+              <option value="none">{t(lang, "हस्ताक्षर छुपाएँ", "Hide Signature")}</option>
+            </select>
+          </Field>
+          <Field label={t(lang, "प्रमाणित करने वाले पदाधिकारी", "Certifying Officer")}>
+            <select className="form-control" value={cfg.certifyingOfficerId} onChange={(e) => setCfg({ ...cfg, certifyingOfficerId: e.target.value })}>
+              {officers.map((o) => <option key={o.id} value={o.id}>{o.nameHi} — {o.designationHi}</option>)}
+            </select>
+          </Field>
+          <Field label={t(lang, "पदनाम (Designation) दिखाएँ", "Show Designation")}>
+            <select className="form-control" value={cfg.showDesignation} onChange={(e) => setCfg({ ...cfg, showDesignation: e.target.value })}>
+              <option value="yes">{t(lang, "हाँ", "Yes")}</option>
+              <option value="no">{t(lang, "नहीं", "No")}</option>
+            </select>
+          </Field>
+          <Field label={t(lang, "तारीख स्वतः भरें", "Auto-Fill Date")}>
+            <select className="form-control" value={cfg.autoFillDate} onChange={(e) => setCfg({ ...cfg, autoFillDate: e.target.value })}>
+              <option value="yes">{t(lang, "हाँ — PDF बनने की तारीख", "Yes — PDF Generation Date")}</option>
+              <option value="no">{t(lang, "नहीं — खाली छोड़ें", "No — Leave Blank")}</option>
+            </select>
+          </Field>
+          <Field label={t(lang, "प्रमाणित कर्ता शीर्षक", "Certifier Title")}>
+            <Inp value={cfg.certifierTitle} onChange={(e) => setCfg({ ...cfg, certifierTitle: e.target.value })} />
+          </Field>
+          <Field label={t(lang, "प्रमाणित कर्ता अधिकार / विभाग", "Certifier Authority / Heading")}>
+            <Inp value={cfg.certifierAuthority} onChange={(e) => setCfg({ ...cfg, certifierAuthority: e.target.value })} />
+          </Field>
+          <div className="form-group full">
+            <label className="form-group" style={{ margin: 0 }}>
+              <span className="form-label">{t(lang, "अलग से हस्ताक्षर छवि अपलोड (वैकल्पिक — चुने पदाधिकारी के हस्ताक्षर की जगह)", "Upload Separate Signature Image (Optional)")}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      const url = await uploadFile(f, session, { folder: "upbms/signatures" });
+                      setCfg((prev) => ({ ...prev, customCertifierSigUrl: url }));
+                      showToast(t(lang, "हस्ताक्षर छवि अपलोड हो गई", "Signature uploaded"));
+                    }
+                  }}
+                />
+                {(cfg.customCertifierSigUrl || officers.find((o) => o.id === cfg.certifyingOfficerId)?.signatureUrl) && (
+                  <img
+                    src={cfg.customCertifierSigUrl || officers.find((o) => o.id === cfg.certifyingOfficerId)?.signatureUrl}
+                    alt="Certifier Sig"
+                    style={{ height: 36, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: 2 }}
+                  />
+                )}
+              </div>
+            </label>
+          </div>
+        </div>
+        <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12, fontWeight: 800 }} onClick={() => saveCfg(t(lang, "हस्ताक्षर एवं प्रमाणित कर्ता सेटिंग सेव हो गई", "Signature & certifier settings saved"))}>
+          💾 {t(lang, "हस्ताक्षर एवं प्रमाणित कर्ता सेव करें", "Save Signature & Certifier")}
+        </button>
+      </div>
+
+      {/* Card 5: All Form Text Fields (matching Images 5 & 6) */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px" }}>
+        <div className="form-grid">
+          <Field label={t(lang, "फॉर्म शीर्षक (हिंदी)", "Form Title (Hindi)")}><Inp value={cfg.formTitleHi} onChange={(e) => setCfg({ ...cfg, formTitleHi: e.target.value })} /></Field>
+          <Field label="Form Title (English)"><Inp value={cfg.formTitleEn} onChange={(e) => setCfg({ ...cfg, formTitleEn: e.target.value })} /></Field>
+          <div className="form-group full"><Field label={t(lang, "संघ का नाम (हिंदी)", "Union Name (Hindi)")}><Inp value={cfg.unionNameHi} onChange={(e) => setCfg({ ...cfg, unionNameHi: e.target.value })} /></Field></div>
+          <Field label="Union Name (English)"><Inp value={cfg.unionNameEn} onChange={(e) => setCfg({ ...cfg, unionNameEn: e.target.value })} /></Field>
+          <Field label={t(lang, "पता लेबल (हिंदी)", "Address Label (Hindi)")}><Inp value={cfg.fieldLocalAddress} onChange={(e) => setCfg({ ...cfg, fieldLocalAddress: e.target.value })} /></Field>
+          <Field label="Address Label (English)"><Inp value={cfg.fieldLocalAddressEn} onChange={(e) => setCfg({ ...cfg, fieldLocalAddressEn: e.target.value })} /></Field>
+          <Field label={t(lang, "केंद्र का पता (ब्लॉक)", "Center/Block Label")}><Inp value={cfg.fieldBlock} onChange={(e) => setCfg({ ...cfg, fieldBlock: e.target.value })} /></Field>
+          <Field label={t(lang, "जनपद", "District Label")}><Inp value={cfg.fieldDistrict} onChange={(e) => setCfg({ ...cfg, fieldDistrict: e.target.value })} /></Field>
+          <Field label={t(lang, "संबद्ध बैंक", "Bank Label")}><Inp value={cfg.fieldBank} onChange={(e) => setCfg({ ...cfg, fieldBank: e.target.value })} /></Field>
+          <Field label="KO CODE"><Inp value={cfg.fieldKoCode} onChange={(e) => setCfg({ ...cfg, fieldKoCode: e.target.value })} /></Field>
+          <Field label={t(lang, "सम्बोधन (सेवा में...)", "Salutation")}><Inp value={cfg.salutation} onChange={(e) => setCfg({ ...cfg, salutation: e.target.value })} /></Field>
+          <div className="form-group full"><Field label={t(lang, "मुख्य विवरण (साधारण/विशिष्ट, विधान-उपनियम)", "Body Text")}><Area rows={3} value={cfg.bodyText} onChange={(e) => setCfg({ ...cfg, bodyText: e.target.value })} /></Field></div>
+          <Field label={t(lang, "शुल्क पंक्ति (प्रवेश शुल्क व वार्षिक चन्दा)", "Fee Line")}><Inp value={cfg.feeLine} onChange={(e) => setCfg({ ...cfg, feeLine: e.target.value })} /></Field>
+          <Field label={t(lang, "फील्ड — पूरा नाम", "Field — Full Name")}><Inp value={cfg.fieldName} onChange={(e) => setCfg({ ...cfg, fieldName: e.target.value })} /></Field>
+          <Field label={t(lang, "फील्ड — पिता का नाम", "Field — Father's Name")}><Inp value={cfg.fieldFather} onChange={(e) => setCfg({ ...cfg, fieldFather: e.target.value })} /></Field>
+          <Field label={t(lang, "फील्ड — उम्र", "Field — Age")}><Inp value={cfg.fieldAge} onChange={(e) => setCfg({ ...cfg, fieldAge: e.target.value })} /></Field>
+          <Field label={t(lang, "जीविका वृत्ति शीर्षक", "Livelihood Heading")}><Inp value={cfg.livelihoodHeading} onChange={(e) => setCfg({ ...cfg, livelihoodHeading: e.target.value })} /></Field>
+          <Field label={t(lang, "(1) संस्था / मालिक", "(1) Institution / Owner")}><Inp value={cfg.livelihood1} onChange={(e) => setCfg({ ...cfg, livelihood1: e.target.value })} /></Field>
+          <Field label={t(lang, "(2) कार्य में पद", "(2) Work Designation")}><Inp value={cfg.livelihood2} onChange={(e) => setCfg({ ...cfg, livelihood2: e.target.value })} /></Field>
+          <Field label={t(lang, "(3) अवधि", "(3) Duration")}><Inp value={cfg.livelihood3} onChange={(e) => setCfg({ ...cfg, livelihood3: e.target.value })} /></Field>
+          <Field label={t(lang, "(4) मासिक / दैनिक वेतन", "(4) Remuneration")}><Inp value={cfg.livelihood4} onChange={(e) => setCfg({ ...cfg, livelihood4: e.target.value })} /></Field>
+          <Field label={t(lang, "तारीख", "Date Label")}><Inp value={cfg.fieldDate} onChange={(e) => setCfg({ ...cfg, fieldDate: e.target.value })} /></Field>
+          <Field label={t(lang, "भवदीय", "Regards Label")}><Inp value={cfg.regardsText} onChange={(e) => setCfg({ ...cfg, regardsText: e.target.value })} /></Field>
+          <Field label={t(lang, "(1) नाम", "(1) Name")}><Inp value={cfg.certifierNameLabel} onChange={(e) => setCfg({ ...cfg, certifierNameLabel: e.target.value })} /></Field>
+          <Field label={t(lang, "(2) हस्ताक्षर", "(2) Signature")}><Inp value={cfg.certifierSigLabel} onChange={(e) => setCfg({ ...cfg, certifierSigLabel: e.target.value })} /></Field>
+          <Field label={t(lang, "(3) तारीख", "(3) Date")}><Inp value={cfg.certifierDateLabel} onChange={(e) => setCfg({ ...cfg, certifierDateLabel: e.target.value })} /></Field>
+        </div>
+        <button type="button" className="btn btn-accent" style={{ marginTop: 16, fontWeight: 800 }} onClick={() => saveCfg(t(lang, "सदस्यता फॉर्म पाठ सेव हो गया", "Membership form text saved"))}>
+          💾 {t(lang, "फॉर्म पाठ सेव करें", "Save Form Text")}
+        </button>
+      </div>
+
+      {previewSample && (
+        <MembershipFormModal
+          member={previewSample}
+          state={{ ...state, settings: { ...s, membershipFormConfig: cfg } }}
+          lang={lang}
+          onClose={() => setPreviewSample(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+const ADMIN_PERMISSIONS = [
+  { key: "members", hi: "सदस्य प्रबंधन (जोड़ना/संशोधन/हटाना)", en: "Member Management" },
+  { key: "approvals", hi: "सदस्य अनुमोदन (Approve/Reject)", en: "Member Approvals" },
+  { key: "feeSettings", hi: "शुल्क (Fee) सेटिंग व लेजर", en: "Fee Settings & Payments Ledger" },
+  { key: "bankQr", hi: "बैंक, UPI व QR प्रबंधन", en: "Bank, UPI & QR Settings" },
+  { key: "documents", hi: "संघ दस्तावेज़, सर्कुलर, प्रमाण-पत्र, मांगें", en: "Documents, Circulars, Certificates, Demands" },
+  { key: "websiteContent", hi: "वेबसाइट सामग्री (स्लाइडर, समाचार, लिंक, About)", en: "Website Content" },
+  { key: "signatories", hi: "हस्ताक्षर, मुहर, लेटर/ID टैम्प्लेट", en: "Signatories, Seal, Templates" },
+  { key: "orgSettings", hi: "संगठन सेटिंग, मेनू नाम, ब्रांडिंग", en: "Org Settings, Menu Names, Branding" },
+  { key: "visibility", hi: "दिखाना/छुपाना (Hide/Show)", en: "Visibility (Hide/Show)" },
+  { key: "formText", hi: "सदस्यता फॉर्म टेक्स्ट", en: "Membership Form Text" },
+  { key: "grievance", hi: "शिकायत प्रबंधन", en: "Grievance Management" },
+  { key: "logs", hi: "सुरक्षा/उपयोग लॉग", en: "Security/Usage Logs" }
+];
+
+function SubAdminsTab({ portal, run }) {
+  const { session, showToast, lang, refresh } = portal;
+  const [users, setUsers] = useState([]);
+  const [selectedUserId, setSelectedUserId] = useState("__new__");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("active");
+  const [perms, setPerms] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  async function loadUsers() {
+    try {
+      const res = await api("/api/users", { session });
+      if (res.ok && res.users) setUsers(res.users);
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const adminsList = users.filter((u) => u.level === 1 || u.level === 2);
+  const selectableUsers = users.filter((u) => u.level !== 1);
+
+  function handleSelectUser(id) {
+    setSelectedUserId(id);
+    if (id === "__new__") {
+      setUsername("");
+      setPassword("");
+      setStatus("active");
+      setPerms({});
+    } else {
+      const u = users.find((x) => x.id === id);
+      if (u) {
+        setUsername(u.username || u.memberCode || "");
+        setPassword("");
+        setStatus(u.status || "active");
+        setPerms(u.adminPermissions || {});
+      }
+    }
+  }
+
+  function togglePerm(key) {
+    setPerms((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function giveAll() {
+    const all = {};
+    ADMIN_PERMISSIONS.forEach((p) => { all[p.key] = true; });
+    setPerms(all);
+  }
+
+  function clearAll() {
+    setPerms({});
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (selectedUserId === "__new__") {
+        if (!username.trim() || password.trim().length < 4) {
+          showToast(t(lang, "नए सब-एडमिन हेतु यूज़रनेम और कम से कम 4 अक्षर का पासवर्ड दर्ज करें।", "Username and password (min 4 chars) required."));
+          setSaving(false);
+          return;
+        }
+        await api("/api/users/subadmin", {
+          method: "POST",
+          session,
+          body: { username: username.trim(), password: password.trim(), status, adminPermissions: perms }
+        });
+        showToast(t(lang, "✅ नया सब-एडमिन बनाया गया!", "✅ New Sub-Admin created!"));
+      } else {
+        await api(`/api/users/${selectedUserId}/permissions`, {
+          method: "PUT",
+          session,
+          body: {
+            level: 2,
+            status,
+            adminPermissions: perms,
+            ...(password.trim().length >= 4 ? { password: password.trim() } : {})
+          }
+        });
+        showToast(t(lang, "✅ सब-एडमिन अधिकार सफलतापूर्वक अपडेट हो गए!", "✅ Admin permissions updated successfully!"));
+      }
+      await loadUsers();
+      await refresh();
+      handleSelectUser("__new__");
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      {/* Header Banner */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "20px 24px", borderLeft: "4px solid #2563eb" }}>
+        <h3 style={{ margin: "0 0 6px", color: "var(--primary)", fontWeight: 900, fontSize: "1.18rem", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>👑</span>
+          <span>{t(lang, "सुपर एडमिन एवं सब-एडमिन प्रबंधन (Level 1 Exclusive)", "Super Admin & Sub-Admin Permissions Management")}</span>
+        </h3>
+        <p style={{ margin: 0, color: "#1e40af", fontSize: "0.86rem" }}>
+          {t(
+            lang,
+            "सुपर एडमिन के पास सभी अधिकार होते हैं। नीचे ड्रॉपडाउन से किसी भी सब-एडमिन/सदस्य को चुनें, दिए गए व न दिए गए अधिकार देखें और आसानी से दें या वापस लें।",
+            "Super Admin holds all powers. Select any admin/user from the dropdown below to view granted vs ungranted permissions and easily grant or revoke them."
+          )}
+        </p>
+      </div>
+
+      {/* Existing Admins Table */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>{t(lang, "यूज़रनेम / नाम", "Username / Name")}</th>
+                <th>{t(lang, "भूमिका", "Role")}</th>
+                <th>{t(lang, "दिए गए अधिकार (Permissions)", "Granted Permissions")}</th>
+                <th>{t(lang, "स्थिति", "Status")}</th>
+                <th>{t(lang, "कार्य", "Action")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adminsList.map((u) => {
+                const grantedCount = Object.values(u.adminPermissions || {}).filter(Boolean).length;
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ fontWeight: 800 }}>{u.username || u.memberCode}</div>
+                      <div style={{ fontSize: "0.76rem", color: "#64748b" }}>{t(lang, u.nameHi, u.nameEn)}</div>
+                    </td>
+                    <td>
+                      {u.level === 1 ? "👑 सुपर एडमिन" : "⭐ सब-एडमिन"}
+                    </td>
+                    <td style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
+                      {u.level === 1
+                        ? t(lang, "सभी अधिकार (All Powers)", "All Permissions")
+                        : t(lang, `${grantedCount} / ${ADMIN_PERMISSIONS.length} अधिकार`, `${grantedCount} / ${ADMIN_PERMISSIONS.length} Permissions`)}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${u.status === "active" ? "verified" : "pending"}`}>
+                        {u.status === "active" ? t(lang, "सक्रिय", "Active") : u.status}
+                      </span>
+                    </td>
+                    <td>
+                      {u.level === 1 ? (
+                        <span style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 700 }}>{t(lang, "सुरक्षित", "Protected")}</span>
+                      ) : (
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => handleSelectUser(u.id)}>
+                          ✏️ {t(lang, "अधिकार बदलें", "Manage Powers")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Create / Edit Individual Sub-Admin Permissions Form (matching Image 9) */}
+      <form className="card-panel" onSubmit={handleSave} style={{ borderRadius: 16, padding: "22px 26px" }}>
+        <h4 style={{ margin: "0 0 16px", color: "var(--primary)", fontWeight: 900, fontSize: "1.06rem" }}>
+          + {t(lang, "सब-एडमिन बनाएँ / व्यक्तिगत अधिकार प्रबंधित करें", "Create Sub-Admin / Manage Individual Admin Permissions")}
+        </h4>
+
+        <div className="form-grid" style={{ marginBottom: 16 }}>
+          <Field label={t(lang, "यूज़र / एडमिन चुनें (Select User from Dropdown)", "Select User / Admin from Dropdown")}>
+            <select className="form-control" value={selectedUserId} onChange={(e) => handleSelectUser(e.target.value)}>
+              <option value="__new__">➕ {t(lang, "नया सब-एडमिन बनाएँ (Create New Sub-Admin)", "Create New Sub-Admin")}</option>
+              {selectableUsers.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.level === 2 ? "⭐ [Sub-Admin]" : "👤 [Member]"} {u.nameHi || u.nameEn} ({u.username || u.memberCode})
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={t(lang, "स्थिति (Status)", "Status")}>
+            <select className="form-control" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="active">✅ {t(lang, "सक्रिय (Active)", "Active")}</option>
+              <option value="suspended">🚫 {t(lang, "निलंबित (Suspended)", "Suspended")}</option>
+            </select>
+          </Field>
+
+          {selectedUserId === "__new__" && (
+            <Field label={t(lang, "यूज़रनेम *", "Username *")}>
+              <Inp value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. lucknow_admin" required />
+            </Field>
+          )}
+
+          <Field label={selectedUserId === "__new__" ? t(lang, "पासवर्ड (न्यूनतम 4 अक्षर) *", "Password (min 4 chars) *") : t(lang, "नया पासवर्ड (बदलना न हो तो खाली छोड़ें)", "New Password (leave blank to keep current)")}>
+            <Inp type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required={selectedUserId === "__new__"} />
+          </Field>
+        </div>
+
+        {/* Permissions Grid */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          <div style={{ fontWeight: 900, fontSize: "0.92rem", color: "#0b1a30" }}>
+            {t(lang, "अधिकार चुनें (Powers — टिक = दिया गया, खाली = नहीं दिया गया)", "Select Permissions (Checked = Granted, Unchecked = Not Granted)")}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={giveAll}>{t(lang, "सभी दें (Grant All)", "Grant All")}</button>
+            <button type="button" className="btn btn-outline btn-sm" onClick={clearAll}>{t(lang, "सभी हटाएँ (Revoke All)", "Revoke All")}</button>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10, marginBottom: 18 }}>
+          {ADMIN_PERMISSIONS.map((p) => {
+            const granted = Boolean(perms[p.key]);
+            return (
+              <label
+                key={p.key}
+                style={{
+                  border: `1.5px solid ${granted ? "#16a34a" : "#cbd5e1"}`,
+                  background: granted ? "#f0fdf4" : "#ffffff",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={granted}
+                  onChange={() => togglePerm(p.key)}
+                  style={{ marginTop: 3 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.82rem", color: granted ? "#166534" : "#0b1a30" }}>{p.hi}</div>
+                  <div style={{ fontSize: "0.73rem", color: "#64748b" }}>{p.en}</div>
+                  <div style={{ fontSize: "0.7rem", fontWeight: 800, marginTop: 2, color: granted ? "#16a34a" : "#94a3b8" }}>
+                    {granted ? `✓ ${t(lang, "दिया गया", "Granted")}` : `✕ ${t(lang, "नहीं दिया", "Not Given")}`}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button type="submit" className="btn btn-accent" disabled={saving} style={{ fontWeight: 800 }}>
+            {saving ? t(lang, "सेव हो रहा है...", "Saving...") : `💾 ${t(lang, "सब-एडमिन / अधिकार सेव करें", "Save Sub-Admin & Permissions")}`}
+          </button>
+          <button type="button" className="btn btn-outline" onClick={() => handleSelectUser("__new__")}>
+            🔄 {t(lang, "फॉर्म साफ़ करें", "Clear Form")}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MemberEditModal({ member, state, session, run, onClose, showToast, lang }) {
+  const s = state.settings || {};
+  const sigs = s.signatories || [];
+  const isNew = !member;
+  const cur = member || {
+    status: "active",
+    designationHi: "सक्रिय बैंक मित्र सदस्य",
+    designationEn: "Active Bank Mitra Member",
+    district: state.meta?.districts?.[0] || "",
+    bankName: state.meta?.banks?.[0] || "",
+    bcCompany: state.meta?.bcCompanies?.[0] || "",
+    bloodGroup: "O+",
+    displayOrder: 50,
+    joinedDate: today(),
+    validUntil: `${new Date().getFullYear()}-12-31`,
+    feePaid: 251,
+    level: 3
+  };
+  const letterIds = cur.letterSignatoryIds || (cur.signatoryId ? [cur.signatoryId] : s.defaultSignatoryIds || []);
+  const [photoUrl, setPhotoUrl] = useState(cur.photoUrl || "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    const fd = new FormData(e.target);
+    const payload = Object.fromEntries(fd.entries());
+    payload.isCoreMember = Boolean(e.target.querySelector("[name=isCoreMember]")?.checked);
+    payload.photoUrl = photoUrl;
+    payload.displayOrder = Number(payload.displayOrder || 50);
+    payload.level = Number(payload.level || (payload.isCoreMember ? 2 : 3));
+    if (payload.feePaid !== undefined) payload.feePaid = Number(payload.feePaid || 0);
+    payload.letterSignatoryIds = [...e.target.querySelectorAll("[name=letterSig]:checked")].map((el) => el.value);
+    if (!payload.letterSignatoryIds.length && payload.signatoryId) {
+      payload.letterSignatoryIds = [payload.signatoryId];
+    }
+    payload.fromAdmin = true;
+
+    const ok = isNew
+      ? await run("/api/members", { method: "POST", body: payload }, t(lang, "नया सदस्य जोड़ा गया", "New member added"))
+      : await run(`/api/members/${member.id}`, { method: "PUT", body: payload }, t(lang, "सदस्य विवरण अपडेट हो गया", "Member details updated"));
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.72)", zIndex: 9999,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16
+    }}>
+      <div style={{
+        background: "#ffffff", borderRadius: 14, maxWidth: 740, width: "100%", maxHeight: "92vh",
+        display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.4)"
+      }}>
+        <div style={{
+          background: "#0b1a30", color: "#ffffff", padding: "12px 18px",
+          display: "flex", justifyContent: "space-between", alignItems: "center"
+        }}>
+          <div style={{ fontWeight: 800, fontSize: "0.98rem", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>✏️</span>
+            <span>
+              {isNew
+                ? t(lang, "नया सदस्य / पदाधिकारी जोड़ें", "Add New Member / Office-Bearer")
+                : t(lang, `सदस्य विवरण संशोधित करें (${member.memberCode})`, `Edit Member Details (${member.memberCode})`)}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "#fecaca", color: "#991b1b", border: "none", borderRadius: 6, width: 28, height: 28, fontWeight: 900, cursor: "pointer" }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ overflowY: "auto", padding: "18px 22px", flex: 1 }}>
+          <div className="form-grid">
+            <Field label={t(lang, "पूरा नाम (हिंदी) *", "Full Name (Hindi) *")}>
+              <Inp name="nameHi" defaultValue={cur.nameHi} required />
+            </Field>
+            <Field label={t(lang, "Full Name (English) *", "Full Name (English) *")}>
+              <Inp name="nameEn" defaultValue={cur.nameEn} required />
+            </Field>
+            <Field label={t(lang, "पिता का नाम (हिंदी)", "Father's Name (Hindi)")}>
+              <Inp name="fatherName" defaultValue={cur.fatherName} />
+            </Field>
+            <Field label={t(lang, "Father's Name (English)", "Father's Name (English)")}>
+              <Inp name="fatherNameEn" defaultValue={cur.fatherNameEn} />
+            </Field>
+            <Field label={t(lang, "पदनाम (हिंदी) *", "Designation (Hindi) *")}>
+              <Inp name="designationHi" defaultValue={cur.designationHi} required />
+            </Field>
+            <Field label={t(lang, "Designation (English) *", "Designation (English) *")}>
+              <Inp name="designationEn" defaultValue={cur.designationEn} required />
+            </Field>
+            <Field label={t(lang, "जनपद (District)", "District")}>
+              <select className="form-control" name="district" defaultValue={cur.district}>
+                {(state.meta?.districts || []).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+            <Field label={t(lang, "ब्लॉक / केंद्र (हिंदी | English)", "Block / Center (Hindi | English)")}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Inp name="block" defaultValue={cur.block} placeholder="हिंदी" />
+                <Inp name="blockEn" defaultValue={cur.blockEn} placeholder="English" />
+              </div>
+            </Field>
+            <Field label={t(lang, "संबंधित बैंक", "Associated Bank")}>
+              <select className="form-control" name="bankName" defaultValue={cur.bankName}>
+                {(state.meta?.banks || []).map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+            <Field label={t(lang, "बीसी कंपनी", "BC Company")}>
+              <select className="form-control" name="bcCompany" defaultValue={cur.bcCompany}>
+                {(state.meta?.bcCompanies || []).map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label={t(lang, "केओ / सीएसपी कोड", "KO / CSP Code")}>
+              <Inp name="koCode" defaultValue={cur.koCode} />
+            </Field>
+            <Field label={t(lang, "मोबाइल नंबर *", "Mobile Number *")}>
+              <Inp name="mobile" defaultValue={cur.mobile} required />
+            </Field>
+            <Field label={t(lang, "WhatsApp नंबर", "WhatsApp Number")}>
+              <Inp name="whatsapp" defaultValue={cur.whatsapp || cur.mobile} />
+            </Field>
+            <Field label={t(lang, "रक्त समूह एवं क्रम", "Blood Group & Display Order")}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Inp name="bloodGroup" defaultValue={cur.bloodGroup || "O+"} placeholder="B+" />
+                <Inp name="displayOrder" type="number" defaultValue={cur.displayOrder || 50} />
+              </div>
+            </Field>
+            <Field label={t(lang, "पंजीकरण तिथि / वैधता तिथि", "Joined Date / Valid Until")}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <Inp name="joinedDate" type="date" defaultValue={cur.joinedDate || today()} />
+                <Inp name="validUntil" type="date" defaultValue={cur.validUntil || `${new Date().getFullYear()}-12-31`} />
+              </div>
+            </Field>
+            <Field label={t(lang, "सदस्य स्थिति (Status)", "Member Status")}>
+              <select className="form-control" name="status" defaultValue={cur.status || "active"}>
+                <option value="active">{t(lang, "सक्रिय (Active)", "Active")}</option>
+                <option value="pending">{t(lang, "लंबित (Pending)", "Pending")}</option>
+                <option value="suspended">{t(lang, "निलंबित (Suspended)", "Suspended")}</option>
+                <option value="rejected">{t(lang, "अस्वीकृत (Rejected)", "Rejected")}</option>
+              </select>
+            </Field>
+            <Field label={t(lang, "ईमेल (Email)", "Email")}>
+              <Inp name="email" type="email" defaultValue={cur.email} />
+            </Field>
+            <Field label={t(lang, "पोर्टल भूमिका (Role)", "Portal Role")}>
+              <select className="form-control" name="level" defaultValue={cur.level === 1 ? 1 : (cur.level || 3)} disabled={cur.level === 1}>
+                {cur.level === 1 && <option value={1}>👑 Super Admin</option>}
+                <option value={2}>⭐ Admin / Sub-Admin</option>
+                <option value={3}>🎖️ Active Member</option>
+              </select>
+            </Field>
+
+            {isNew && (
+              <>
+                <Field label={t(lang, "लॉगिन पासवर्ड *", "Login Password *")}>
+                  <Inp name="password" defaultValue="123456" required />
+                </Field>
+                <Field label={t(lang, "शुल्क जमा (₹)", "Fee Paid (₹)")}>
+                  <Inp name="feePaid" type="number" defaultValue={251} />
+                </Field>
+              </>
+            )}
+
+            <div className="form-group full" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, cursor: "pointer" }}>
+                <input type="checkbox" name="isCoreMember" defaultChecked={cur.isCoreMember} />
+                <span>⭐ {t(lang, "मुख्य कार्यकारिणी सदस्य (Core Member)", "State Core Executive Member")}</span>
+              </label>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.84rem", fontWeight: 700 }}>
+                <span>{t(lang, "फोटो:", "Photo:")}</span>
+                {photoUrl && <img src={photoUrl} alt="" style={{ width: 34, height: 40, objectFit: "cover", borderRadius: 4, border: "1px solid #cbd5e1" }} />}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      const url = await uploadFile(f, session, { folder: "upbms/members" });
+                      setPhotoUrl(url);
+                      showToast(t(lang, "फोटो अपलोड हो गई", "Photo uploaded"));
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            <div className="form-group full" style={{
+              background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 12, padding: "12px 16px"
+            }}>
+              <div style={{ fontWeight: 900, fontSize: "0.86rem", color: "#92400e", marginBottom: 4 }}>
+                ✍️ {t(lang, "सदस्य के प्रपत्रों (ID Card, नियुक्ति पत्र व रसीद) हेतु हस्ताक्षरकर्ता पदाधिकारी चयन — केवल एडमिन हेतु", "Signatory Officer Selection for ID Card, Letter & Receipt — Admin Only")}
+              </div>
+              <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+                <Field label={t(lang, "ID Card हस्ताक्षरकर्ता", "ID Card Signatory")}>
+                  <select className="form-control" name="signatoryId" defaultValue={cur.signatoryId || s.defaultSignatoryId || ""}>
+                    {sigs.map((sg) => <option key={sg.id} value={sg.id}>{sg.nameHi} ({sg.designationHi})</option>)}
+                  </select>
+                </Field>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: "0.82rem", fontWeight: 700 }}>
+                  {sigs.map((sg) => (
+                    <label key={sg.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                      <input type="checkbox" name="letterSig" value={sg.id} defaultChecked={letterIds.includes(sg.id)} />
+                      <span>{sg.nameHi}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 16, paddingTop: 12, borderTop: "1px solid #e2e8f0" }}>
+            <button type="submit" className="btn btn-accent" disabled={saving} style={{ fontWeight: 800 }}>
+              {saving ? t(lang, "सेव हो रहा है...", "Saving...") : `💾 ${t(lang, "परिवर्तन सेव करें", "Save Changes")}`}
+            </button>
+            <button type="button" className="btn btn-outline" onClick={onClose}>
+              {t(lang, "रद्द करें", "Cancel")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function UsersManagement({ portal, run, setTab }) {
+  const { state, session, showToast, lang, refresh, setRoute } = portal;
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [levelFilter, setLevelFilter] = useState("all");
-  const [updatingId, setUpdatingId] = useState(null);
-  const [editL1, setEditL1] = useState(false);
-  const [l1Form, setL1Form] = useState({
-    username: "",
-    password: "",
-    nameHi: "",
-    nameEn: "",
-    mobile: ""
-  });
+  const [filterMode, setFilterMode] = useState("all");
+  const [editMember, setEditMember] = useState(undefined);
+  const [previewMember, setPreviewMember] = useState(null);
+  const [bulkApproving, setBulkApproving] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -632,16 +2453,6 @@ function UsersManagement({ portal, run }) {
       const res = await api("/api/users", { session });
       if (res.ok && res.users) {
         setUsers(res.users);
-        const l1 = res.users.find((u) => u.level === 1);
-        if (l1) {
-          setL1Form({
-            username: l1.username || "admin",
-            password: "",
-            nameHi: l1.nameHi || "",
-            nameEn: l1.nameEn || "",
-            mobile: l1.mobile || ""
-          });
-        }
       }
     } catch (err) {
       showToast(err.message);
@@ -652,25 +2463,7 @@ function UsersManagement({ portal, run }) {
 
   useEffect(() => {
     loadUsers();
-  }, []);
-
-  const changeLevel = async (userId, newLevel) => {
-    try {
-      setUpdatingId(userId);
-      await api(`/api/users/${userId}/level`, {
-        method: "PUT",
-        session,
-        body: { level: Number(newLevel), activateMember: true }
-      });
-      showToast(t(lang, `उपयोगकर्ता स्तर सफलतापूर्वक Level ${newLevel} में बदला गया`, `User level updated to Level ${newLevel}`));
-      await loadUsers();
-      await refresh();
-    } catch (err) {
-      showToast(err.message);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
+  }, [state.members]);
 
   const deleteUser = async (u) => {
     if (u.level === 1) {
@@ -681,12 +2474,12 @@ function UsersManagement({ portal, run }) {
     const confirmPrompt = t(
       lang,
       `क्या आप वाकई उपयोगकर्ता '${displayName}' (${u.memberCode || u.mobile}) को हटाना चाहते हैं? यह क्रिया वापस नहीं ली जा सकती।`,
-      `Are you sure you want to permanently delete user '${displayName}' (${u.memberCode || u.mobile})? This action cannot be undone.`
+      `Are you sure you want to permanently delete user '${displayName}' (${u.memberCode || u.mobile})?`
     );
     if (!window.confirm(confirmPrompt)) return;
     try {
       await api(`/api/members/${u.id}`, { method: "DELETE", session });
-      showToast(t(lang, "उपयोगकर्ता सफलतापूर्वक हटा दिया गया।", "User deleted successfully."));
+      showToast(t(lang, "सदस्य सफलतापूर्वक हटाया गया।", "Member deleted successfully."));
       await loadUsers();
       await refresh();
     } catch (err) {
@@ -694,302 +2487,214 @@ function UsersManagement({ portal, run }) {
     }
   };
 
-  const handleL1Submit = async (e) => {
-    e.preventDefault();
+  async function approveAllPending() {
+    setBulkApproving(true);
     try {
-      await api("/api/users/level1-credentials", {
-        method: "PUT",
-        session,
-        body: l1Form
-      });
-      showToast(t(lang, "लेवल 1 सुपर एडमिन क्रेडेंशियल सफलतापूर्वक अपडेट किए गए", "Level 1 Super Admin credentials updated"));
-      setEditL1(false);
+      const res = await api("/api/members/approve-bulk", { method: "POST", session, body: { ids: [] } });
+      showToast(t(lang, `✅ ${res.approvedCount} लंबित सदस्य अनुमोदित हो गए!`, `✅ ${res.approvedCount} pending members approved!`));
       await loadUsers();
       await refresh();
     } catch (err) {
       showToast(err.message);
+    } finally {
+      setBulkApproving(false);
     }
-  };
+  }
 
-  const superAdminUser = users.find((u) => u.level === 1) || (state.members || []).find((m) => m.level === 1);
-  const levelCounts = {
-    1: users.filter((u) => u.level === 1).length,
-    2: users.filter((u) => u.level === 2).length,
-    3: users.filter((u) => u.level === 3).length
-  };
+  const pendingCount = users.filter((u) => u.status === "pending").length;
 
   const filteredUsers = users.filter((u) => {
-    if (levelFilter !== "all" && String(u.level) !== String(levelFilter)) return false;
+    if (filterMode === "core" && !u.isCoreMember) return false;
+    if (filterMode === "active" && u.status !== "active") return false;
+    if (filterMode === "pending" && u.status !== "pending") return false;
     if (search) {
       const q = search.toLowerCase();
-      const combined = `${u.nameHi} ${u.nameEn} ${u.memberCode} ${u.username} ${u.mobile} ${u.district} ${u.designationHi}`.toLowerCase();
+      const combined = `${u.nameHi} ${u.nameEn} ${u.memberCode} ${u.username} ${u.mobile} ${u.district} ${u.designationHi} ${u.koCode}`.toLowerCase();
       if (!combined.includes(q)) return false;
     }
     return true;
   });
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      {/* 1. Header Banner */}
-      <div className="card-panel" style={{ borderLeft: "5px solid #eab308", background: "linear-gradient(135deg, #0b1a30 0%, #162a45 100%)", color: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+    <div style={{ display: "grid", gap: 18 }}>
+      <div className="card-panel" style={{ borderRadius: 16, padding: "20px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
           <div>
-            <div style={{ color: "#ffd166", fontWeight: 800, fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>
-              👑 ACCESS CONTROL & ROLES (SUPER ADMIN EXCLUSIVE)
-            </div>
-            <h2 style={{ margin: "0 0 6px", fontSize: "1.5rem", fontWeight: 900, color: "#fff" }}>
-              {t(lang, "👥 उपयोगकर्ता एवं अनुमति स्तर प्रबंधन", "👥 User Access & Role Permissions")}
-            </h2>
-            <p style={{ margin: 0, color: "#cbd5e1", fontSize: "0.92rem", lineHeight: 1.5, maxWidth: 750 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: "1.2rem", fontWeight: 900, color: "var(--primary)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span>👥</span>
+              <span>{t(lang, "सदस्य प्रबंधन — पूर्ण विवरण संशोधन एवं पासवर्ड रीसेट", "Member Management — Edit Details & Password Reset")}</span>
+            </h3>
+            <p style={{ margin: 0, color: "#64748b", fontSize: "0.86rem" }}>
               {t(
                 lang,
-                "यहाँ से आप प्रत्येक पंजीकृत उपयोगकर्ता के अधिकार व रोल (सुपर एडमिन, प्रशासक, सदस्य) देख और अपग्रेड कर सकते हैं। केवल सुपर एडमिन को उपयोगकर्ता रोल बदलने का पूर्ण अधिकार है।",
-                "View and manage user roles (Super Admin, Admin, Member) for all users. Only Super Admin has authority to upgrade or modify user roles."
+                "किसी भी सदस्य की पूरी डिटेल मॉडिफाई करें, पदनाम/Core श्रेणी बदलें या पासवर्ड भूल जाने पर नया पासवर्ड सेट करें।",
+                "Modify complete details for any member, update designation/Core category, or reset forgotten passwords."
               )}
             </p>
           </div>
-          <button className="btn btn-white btn-sm" onClick={loadUsers} disabled={loading} style={{ alignSelf: "center" }}>
-            🔄 {t(lang, "रीफ्रेश करें", "Refresh Users")}
+          <button type="button" className="btn btn-accent" onClick={() => setEditMember(null)} style={{ fontWeight: 800 }}>
+            + {t(lang, "नया सदस्य / पदाधिकारी जोड़ें", "Add New Member / Office-Bearer")}
           </button>
         </div>
-      </div>
 
-      {/* 2. 3 Levels Summary Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14 }}>
-        {/* Level 1 Card */}
-        <div className="card-panel" style={{ borderTop: "4px solid #f59e0b", padding: "16px 18px", background: "#fffdf5" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level1">👑 SUPER ADMIN</span>
-            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#b45309" }}>{levelCounts[1]} {t(lang, "खाता", "Account")}</span>
-          </div>
-          <div style={{ fontWeight: 800, color: "#92400e", fontSize: "0.95rem" }}>
-            {t(lang, "सुपर एडमिन (केवल 1 खाता)", "Super Admin (Only 1 Account)")}
-          </div>
-          <p style={{ fontSize: "0.82rem", color: "#78350f", margin: "6px 0 0", lineHeight: 1.4 }}>
-            {t(lang, "सर्वोच्च अधिकार: संपूर्ण वेबसाइट, सभी एडमिन पैनल संपादन तथा उपयोगकर्ता प्रबंधन।", "Supreme Access: All website features, all admin tabs, and User Management.")}
-          </p>
-        </div>
-
-        {/* Level 2 Card */}
-        <div className="card-panel" style={{ borderTop: "4px solid #2563eb", padding: "16px 18px", background: "#f8faff" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level2">⭐ ADMIN</span>
-            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1d4ed8" }}>{levelCounts[2]}</span>
-          </div>
-          <div style={{ fontWeight: 800, color: "#1e40af", fontSize: "0.95rem" }}>
-            {t(lang, "प्रशासक / सब-एडमिन", "Admin / Sub-Admin")}
-          </div>
-          <p style={{ fontSize: "0.82rem", color: "#1e3a8a", margin: "6px 0 0", lineHeight: 1.4 }}>
-            {t(lang, "वेबसाइट, सदस्य सूची व एडमिन पैनल। (User Management छोड़कर सभी संपादन अधिकार)।", "Website, Members & Admin Panel (All edit rights EXCEPT User Management).")}
-          </p>
-        </div>
-
-        {/* Level 3 Card */}
-        <div className="card-panel" style={{ borderTop: "4px solid #10b981", padding: "16px 18px", background: "#f6fef9" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span className="badge badge-level3">🎖️ ACTIVE MEMBER</span>
-            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#047857" }}>{levelCounts[3]}</span>
-          </div>
-          <div style={{ fontWeight: 800, color: "#065f46", fontSize: "0.95rem" }}>
-            {t(lang, "सत्यापित सदस्य", "Verified Member")}
-          </div>
-          <p style={{ fontSize: "0.82rem", color: "#064e3b", margin: "6px 0 0", lineHeight: 1.4 }}>
-            {t(lang, "सार्वजनिक वेबसाइट + सदस्य सूची (Members Page) + डिजिटल पहचान पत्र एवं नियुक्ति पत्र।", "Full website + Members Directory + Digital ID Card & Appointment Letter.")}
-          </p>
-        </div>
-      </div>
-
-      {/* 3. Level 1 Account Details Card */}
-      <div className="card-panel" style={{ border: "1.5px solid #fde68a", background: "#fffbeb" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="badge badge-level1" style={{ fontSize: "0.85rem", padding: "3px 10px" }}>👑 SUPER ADMIN</span>
-              <span style={{ color: "#b45309", fontWeight: 800, fontSize: "0.88rem" }}>
-                ({t(lang, "नियम: संपूर्ण प्रणाली में केवल 1 खाता मान्य", "Rule: Exactly One Account Permitted")})
-              </span>
-            </div>
-            <h3 style={{ margin: "6px 0 0", color: "#78350f", fontSize: "1.2rem", fontWeight: 900 }}>
-              {superAdminUser ? t(lang, superAdminUser.nameHi, superAdminUser.nameEn) : "Super Admin"}
-            </h3>
-          </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <button
             type="button"
             className="btn btn-sm"
-            style={{ background: editL1 ? "#e2e8f0" : "#d97706", color: editL1 ? "#0f172a" : "#fff", fontWeight: 800, border: "none" }}
-            onClick={() => setEditL1(!editL1)}
+            disabled={bulkApproving || pendingCount === 0}
+            onClick={approveAllPending}
+            style={{ background: "#16a34a", color: "#ffffff", fontWeight: 800, border: "none", opacity: pendingCount === 0 ? 0.65 : 1 }}
           >
-            {editL1 ? t(lang, "✕ बंद करें", "✕ Close") : t(lang, "✏️ क्रेडेंशियल व पासवर्ड बदलें", "✏️ Change Credentials & Password")}
+            ✅ {t(lang, `सभी लंबित अनुमोदित (${pendingCount})`, `Approve All Pending (${pendingCount})`)}
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => setTab && setTab("approval")}
+            style={{ fontWeight: 800 }}
+          >
+            📄 {t(lang, "अनुमोदन कतार", "Approval Queue")}
           </button>
         </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, fontSize: "0.9rem", color: "#92400e" }}>
-          <div><b>{t(lang, "यूज़रनेम (Username):", "Username:")}</b> <code>{superAdminUser?.username || "admin"}</code></div>
-          <div><b>{t(lang, "सदस्य कोड (Member Code):", "Member Code:")}</b> <code>{superAdminUser?.memberCode || "UPBMS-ADMIN-01"}</code></div>
-          <div><b>{t(lang, "मोबाइल नंबर (Mobile):", "Mobile:")}</b> {superAdminUser?.mobile || "9450011223"}</div>
-          <div><b>{t(lang, "स्थिति (Status):", "Status:")}</b> <span className="badge badge-verified">{t(lang, "सक्रिय (Active)", "Active")}</span></div>
-        </div>
-
-        {editL1 && (
-          <form onSubmit={handleL1Submit} style={{ marginTop: 18, paddingTop: 16, borderTop: "1px dashed #fcd34d", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-            <label className="form-group">
-              {t(lang, "सुपर एडमिन यूज़रनेम (Username)", "Username")}
-              <input className="form-control" value={l1Form.username} onChange={(e) => setL1Form({ ...l1Form, username: e.target.value })} required />
-            </label>
-            <label className="form-group">
-              {t(lang, "नाम (हिंदी में)", "Name (Hindi)")}
-              <input className="form-control" value={l1Form.nameHi} onChange={(e) => setL1Form({ ...l1Form, nameHi: e.target.value })} required />
-            </label>
-            <label className="form-group">
-              {t(lang, "नाम (अंग्रेज़ी में)", "Name (English)")}
-              <input className="form-control" value={l1Form.nameEn} onChange={(e) => setL1Form({ ...l1Form, nameEn: e.target.value })} />
-            </label>
-            <label className="form-group">
-              {t(lang, "मोबाइल नंबर", "Mobile Number")}
-              <input className="form-control" value={l1Form.mobile} onChange={(e) => setL1Form({ ...l1Form, mobile: e.target.value })} required />
-            </label>
-            <label className="form-group">
-              {t(lang, "नया पासवर्ड (New Password)", "New Password")}
-              <input className="form-control" type="password" value={l1Form.password} onChange={(e) => setL1Form({ ...l1Form, password: e.target.value })} placeholder={t(lang, "नया पासवर्ड लिखें (न्यूनतम 4 अक्षर)", "Leave blank to keep current")} />
-            </label>
-            <div style={{ display: "flex", alignItems: "flex-end" }}>
-              <button className="btn btn-accent" style={{ height: 42, width: "100%" }}>
-                💾 {t(lang, "क्रेडेंशियल सहेजें", "Save Credentials")}
-              </button>
-            </div>
-          </form>
-        )}
       </div>
 
-      {/* 4. Users Table & Level Upgrade Controls */}
-      <div className="card-panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14, marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "var(--primary)" }}>
-            📋 {t(lang, "समस्त पंजीकृत उपयोगकर्ता एवं रोल प्रबंधन", "All Users & Role Management")} ({filteredUsers.length})
-          </h3>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-muted)" }}>{t(lang, "फ़िल्टर:", "Filter:")}</span>
-            {["all", "1", "2", "3"].map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                className={`btn btn-sm ${levelFilter === lvl ? "btn-primary" : "btn-outline"}`}
-                style={{ padding: "4px 10px", fontSize: "0.8rem", fontWeight: 800 }}
-                onClick={() => setLevelFilter(lvl)}
-              >
-                {lvl === "all" ? t(lang, "सभी (All)", "All") : lvl === "1" ? t(lang, "सुपर एडमिन", "Super Admin") : lvl === "2" ? t(lang, "प्रशासक", "Admin") : t(lang, "सदस्य", "Member")}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
+      <div className="card-panel" style={{ borderRadius: 16, padding: "18px 22px" }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <input
             className="form-control"
+            style={{ flex: "1 1 280px" }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={t(lang, "नाम, यूज़रनेम, सदस्य आईडी, मोबाइल या जनपद खोजें...", "Search by name, username, member ID, mobile or district...")}
+            placeholder={t(lang, "नाम, Member ID, मोबाइल या जनपद खोजें...", "Search name, Member ID, mobile or district...")}
           />
+          <select
+            className="form-control"
+            style={{ width: "auto", minWidth: 190, fontWeight: 700 }}
+            value={filterMode}
+            onChange={(e) => setFilterMode(e.target.value)}
+          >
+            <option value="all">{t(lang, `सभी सदस्य (${users.length})`, `All Members (${users.length})`)}</option>
+            <option value="core">{t(lang, "मुख्य कार्यकारिणी (Core)", "Core Committee")}</option>
+            <option value="active">{t(lang, "सक्रिय सदस्य (Active)", "Active Members")}</option>
+            <option value="pending">{t(lang, `लंबित (Pending: ${pendingCount})`, `Pending (${pendingCount})`)}</option>
+          </select>
         </div>
 
         {loading ? (
-          <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{t(lang, "उपयोगकर्ता लोड हो रहे हैं...", "Loading users...")}</div>
+          <div style={{ padding: 30, textAlign: "center", color: "#64748b" }}>{t(lang, "लोड हो रहा है...", "Loading...")}</div>
         ) : filteredUsers.length === 0 ? (
-          <div style={{ padding: 30, textAlign: "center", color: "var(--text-muted)" }}>{t(lang, "कोई उपयोगकर्ता नहीं मिला।", "No users found matching criteria.")}</div>
+          <div style={{ padding: 30, textAlign: "center", color: "#64748b" }}>{t(lang, "कोई सदस्य नहीं मिला।", "No members found.")}</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th>{t(lang, "यूज़र / सदस्य कोड", "User / Member Code")}</th>
-                  <th>{t(lang, "नाम एवं पद", "Name & Designation")}</th>
-                  <th>{t(lang, "मोबाइल व जनपद", "Mobile & District")}</th>
-                  <th>{t(lang, "वर्तमान पद / रोल", "Current Role")}</th>
-                  <th style={{ minWidth: 190 }}>{t(lang, "रोल परिवर्तन / अपग्रेड", "Change Role / Upgrade")}</th>
+                  <th>{t(lang, "ID / श्रेणी", "ID / Category")}</th>
+                  <th>{t(lang, "नाम एवं पदनाम", "Name & Designation")}</th>
+                  <th>{t(lang, "जनपद व बैंक", "District & Bank")}</th>
+                  <th>{t(lang, "मोबाइल", "Mobile")}</th>
                   <th>{t(lang, "स्थिति", "Status")}</th>
-                  <th>{t(lang, "कार्रवाई", "Action")}</th>
+                  <th style={{ minWidth: 280 }}>{t(lang, "कार्यवाही (संशोधन / पासवर्ड रीसेट)", "Actions (Edit / Password Reset)")}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((u) => {
                   const isL1 = u.level === 1;
                   return (
-                    <tr key={u.id} style={{ background: isL1 ? "#fffbeb" : undefined }}>
+                    <tr key={u.id}>
                       <td>
-                        <div style={{ fontWeight: 800 }}>{u.memberCode}</div>
-                        {u.username && <div style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>@{u.username}</div>}
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 700 }}>{t(lang, u.nameHi, u.nameEn)}</div>
-                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{t(lang, u.designationHi, u.designationEn)}</div>
-                      </td>
-                      <td>
-                        <div>{u.mobile}</div>
-                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{u.district}</div>
-                      </td>
-                      <td>
-                        <span className={`badge badge-level${u.level}`}>
-                          {u.level === 1 && "👑 Super Admin"}
-                          {u.level === 2 && "⭐ Admin"}
-                          {u.level === 3 && "🎖️ Active Member"}
-                        </span>
-                      </td>
-                      <td>
-                        {isL1 ? (
-                          <span style={{ fontSize: "0.82rem", fontWeight: 800, color: "#b45309" }}>
-                            🔒 {t(lang, "स्थायी सुपर एडमिन (1 खाता केवल)", "Fixed Super Admin (1 Only)")}
+                        <div style={{ fontWeight: 900, fontSize: "0.84rem", color: "#0b1a30" }}>{u.memberCode}</div>
+                        {u.isCoreMember && (
+                          <span style={{
+                            display: "inline-block", marginTop: 3, background: "#fef3c7", color: "#b45309",
+                            padding: "1px 7px", borderRadius: 10, fontSize: "0.7rem", fontWeight: 900
+                          }}>
+                            ★ CORE
                           </span>
-                        ) : (
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <select
-                              className="form-control form-control-sm"
-                              value={u.level}
-                              disabled={updatingId === u.id}
-                              onChange={(e) => changeLevel(u.id, e.target.value)}
-                              style={{ fontWeight: 800, fontSize: "0.82rem", padding: "4px 8px", width: "auto" }}
-                            >
-                              <option value={2}>⭐ Admin</option>
-                              <option value={3}>🎖️ Active Member</option>
-                            </select>
-                            {updatingId === u.id && <span style={{ fontSize: "0.75rem", color: "var(--accent)" }}>⏳</span>}
-                          </div>
                         )}
                       </td>
                       <td>
+                        <div style={{ fontWeight: 800, color: "#0b1a30" }}>{u.nameHi || u.nameEn}</div>
+                        <div style={{ fontSize: "0.76rem", color: "#64748b" }}>{u.nameEn}</div>
+                        <div style={{ fontSize: "0.76rem", color: "#d97706", fontWeight: 700 }}>{t(lang, u.designationHi, u.designationEn)}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700, fontSize: "0.82rem" }}>{u.district || "—"}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{u.bankName} {u.koCode ? `(${u.koCode})` : ""}</div>
+                      </td>
+                      <td style={{ fontWeight: 700, fontSize: "0.84rem" }}>{u.mobile || "—"}</td>
+                      <td>
                         <span className={`badge badge-${u.status === "active" ? "verified" : "pending"}`}>
-                          {u.status === "active" ? t(lang, "सक्रिय", "Active") : t(lang, "लंबित", "Pending")}
+                          {u.status === "active" ? t(lang, "सक्रिय", "Active") : u.status === "pending" ? t(lang, "लंबित", "Pending") : u.status}
                         </span>
                       </td>
                       <td>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            style={{ fontSize: "0.78rem", padding: "4px 8px" }}
-                            onClick={async () => {
-                              const newPwd = prompt(t(lang, `${u.nameHi} का नया पासवर्ड दर्ज करें (न्यूनतम 4 अक्षर):`, `Enter new password for ${u.nameEn} (min 4 chars):`), "123456");
-                              if (newPwd && newPwd.trim().length >= 4) {
-                                try {
-                                  await api(`/api/members/${u.id}/reset-password`, { method: "POST", session, body: { newPassword: newPwd.trim() } });
-                                  showToast(t(lang, "पासवर्ड रीसेट सफल!", "Password reset successfully!"));
-                                } catch (err) {
-                                  showToast(err.message);
-                                }
-                              }
-                            }}
-                          >
-                            🔑 {t(lang, "पासवर्ड", "Password")}
-                          </button>
-                          {!isL1 && (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                             <button
                               type="button"
-                              className="btn btn-danger btn-sm"
-                              style={{ fontSize: "0.78rem", padding: "4px 8px" }}
-                              onClick={() => deleteUser(u)}
+                              className="btn btn-primary btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 9px", fontWeight: 800 }}
+                              onClick={() => setEditMember(u)}
                             >
-                              🗑️ {t(lang, "हटाएं", "Delete")}
+                              ✏️ {t(lang, "संशोधित करें", "Edit")}
                             </button>
-                          )}
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 9px", background: "#fffbeb", borderColor: "#fde68a", color: "#92400e", fontWeight: 800 }}
+                              onClick={async () => {
+                                const newPwd = prompt(t(lang, `${u.nameHi} का नया पासवर्ड दर्ज करें (न्यूनतम 4 अक्षर):`, `Enter new password for ${u.nameEn} (min 4 chars):`), "");
+                                if (newPwd && newPwd.trim().length >= 4) {
+                                  try {
+                                    await api(`/api/members/${u.id}/reset-password`, { method: "POST", session, body: { newPassword: newPwd.trim() } });
+                                    showToast(t(lang, "पासवर्ड रीसेट सफल!", "Password reset successfully!"));
+                                  } catch (err) {
+                                    showToast(err.message);
+                                  }
+                                }
+                              }}
+                            >
+                              🔑 {t(lang, "पासवर्ड रीसेट", "Reset Password")}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 9px", fontWeight: 800 }}
+                              onClick={() => setPreviewMember(u)}
+                            >
+                              📄 {t(lang, "फॉर्म देखें", "View Form")}
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 9px", background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af", fontWeight: 800 }}
+                              onClick={() => downloadMembershipFormPdf(u, state, showToast, lang)}
+                            >
+                              ⬇️ {t(lang, "PDF सेव करें", "Save PDF")}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: "0.75rem", padding: "4px 9px", fontWeight: 800 }}
+                              onClick={() => setRoute("idcard")}
+                            >
+                              🪪 {t(lang, "पत्र/ID", "Letter/ID")}
+                            </button>
+                            {!isL1 && (
+                              <button
+                                type="button"
+                                className="btn btn-danger btn-sm"
+                                style={{ fontSize: "0.75rem", padding: "4px 9px" }}
+                                onClick={() => deleteUser(u)}
+                                title={t(lang, "हटाएं", "Delete")}
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1000,6 +2705,27 @@ function UsersManagement({ portal, run }) {
           </div>
         )}
       </div>
+
+      {editMember !== undefined && (
+        <MemberEditModal
+          member={editMember}
+          state={state}
+          session={session}
+          run={run}
+          lang={lang}
+          showToast={showToast}
+          onClose={() => setEditMember(undefined)}
+        />
+      )}
+
+      {previewMember && (
+        <MembershipFormModal
+          member={previewMember}
+          state={state}
+          lang={lang}
+          onClose={() => setPreviewMember(null)}
+        />
+      )}
     </div>
   );
 }
@@ -4175,7 +5901,6 @@ function Documents({ state, run, saveSettings }) {
     e.preventDefault();
     const payload = Object.fromEntries(new FormData(e.target).entries());
     payload.signatoryIds = [...e.target.querySelectorAll("[name=docSig]:checked")].map((el) => el.value);
-    if (!payload.signatoryIds.length) payload.signatoryIds = [officers[0]?.id || "sig-gs"];
     delete payload.docSig;
     if (await run("/api/documents", { method: "POST", body: payload }, t(lang, "दस्तावेज़ सफलतापूर्वक जोड़ा गया", "Document added successfully"))) {
       e.target.reset();
@@ -4187,6 +5912,8 @@ function Documents({ state, run, saveSettings }) {
     e.preventDefault();
     const payload = Object.fromEntries(new FormData(e.target).entries());
     payload.number = (state.demands.length || 0) + 1;
+    payload.signatoryIds = [...e.target.querySelectorAll("[name=demandSig]:checked")].map((el) => el.value);
+    delete payload.demandSig;
     if (await run("/api/demands", { method: "POST", body: payload }, t(lang, "मांग सफलतापूर्वक जोड़ी गई", "Demand added successfully"))) {
       e.target.reset();
       setActiveTab("demands");
@@ -4303,14 +6030,8 @@ function Documents({ state, run, saveSettings }) {
                     </p>
                   )}
 
-                  {/* Signatories */}
-                  <div style={{ marginTop: 10 }}>
-                    {officers.filter((o) => (d.signatoryIds || []).includes(o.id)).map((o) => (
-                      <span key={o.id} style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.78rem", fontWeight: 700, padding: "2px 10px", marginRight: 6, display: "inline-block", marginBottom: 4 }}>
-                        ✍️ {o.nameHi}
-                      </span>
-                    ))}
-                  </div>
+                  {/* Inline Signatory Replacement Section matching Image 8 */}
+                  <DocRow doc={d} officers={officers} run={run} />
 
                   {/* Action buttons */}
                   <div style={{ marginTop: 12 }}>
@@ -4394,17 +6115,17 @@ function Documents({ state, run, saveSettings }) {
               <textarea name="contentEn" className="form-control" rows={4} placeholder="Write the full content in English…" style={{ width: "100%", fontFamily: "inherit", fontSize: "0.9rem", lineHeight: 1.6, resize: "vertical" }} />
             </div>
 
-            {/* Officer signatories */}
+            {/* Officer signatories (Optional) */}
             {officers.length > 0 && (
               <div style={{ gridColumn: "1 / -1" }}>
                 <label className="about-form-label">
-                  ✍️ {t(lang, "हस्ताक्षरकर्ता पदाधिकारी चुनें (जिनके हस्ताक्षर दस्तावेज़ पर दिखेंगे)", "Select Signing Officers (whose signatures will appear on the document)")}
+                  ✍️ {t(lang, "इस पत्र पर किन-किन पदाधिकारियों के हस्ताक्षर होंगे? (वैकल्पिक — एक या अधिक टिक करें):", "Select Signing Officers (Optional — check one or more):")}
                 </label>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-                  {officers.map((o, i) => (
+                  {officers.map((o) => (
                     <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 7, background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: "0.88rem" }}>
-                      <input type="checkbox" name="docSig" value={o.id} defaultChecked={i === 0} />
-                      {o.nameHi}
+                      <input type="checkbox" name="docSig" value={o.id} />
+                      {o.nameHi} ({o.designationHi})
                     </label>
                   ))}
                 </div>
@@ -4531,6 +6252,21 @@ function Documents({ state, run, saveSettings }) {
               <label className="about-form-label">{t(lang, "Status (English)", "Status (English)")}</label>
               <Inp name="statusEn" defaultValue="Priority Demand" />
             </div>
+            {officers.length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="about-form-label">
+                  ✍️ {t(lang, "हस्ताक्षरकर्ता पदाधिकारी चुनें (वैकल्पिक — Optional)", "Select Signing Officers (Optional)")}
+                </label>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                  {officers.map((o) => (
+                    <label key={o.id} style={{ display: "flex", alignItems: "center", gap: 7, background: "#f8fafc", border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: "0.86rem" }}>
+                      <input type="checkbox" name="demandSig" value={o.id} />
+                      {o.nameHi} ({o.designationHi})
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ marginTop: 22, display: "flex", gap: 12 }}>
             <button type="submit" className="btn-save-orange">
@@ -4716,15 +6452,65 @@ function Documents({ state, run, saveSettings }) {
 function DocRow({ doc, officers, run }) {
   const { lang } = usePortal();
   const [ids, setIds] = useState(doc.signatoryIds || []);
+  const [saving, setSaving] = useState(false);
+
+  async function saveSignatories() {
+    setSaving(true);
+    await run(`/api/documents/${doc.id}`, { method: "PUT", body: { signatoryIds: ids } }, t(lang, "हस्ताक्षर सेव हो गए", "Signatures saved"));
+    setSaving(false);
+  }
+
   return (
-    <div style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, marginTop: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between" }}><b>{doc.titleHi}</b><button className="btn btn-danger btn-sm" onClick={() => run(`/api/documents/${doc.id}`, { method: "DELETE" }, "हटाया")}>हटाएँ</button></div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        {officers.map((o) => (
-          <label key={o.id}><input type="checkbox" checked={ids.includes(o.id)} onChange={(e) => setIds((prev) => e.target.checked ? [...prev, o.id] : prev.filter((x) => x !== o.id))} /> {o.nameHi}</label>
-        ))}
-        <button className="btn btn-primary btn-sm" onClick={() => ids.length && run(`/api/documents/${doc.id}`, { method: "PUT", body: { signatoryIds: ids } }, "हस्ताक्षर सेव")}>हस्ताक्षर सेव</button>
+    <div style={{
+      background: "#fffdf5",
+      border: "1.5px dashed #f59e0b",
+      borderRadius: 10,
+      padding: "10px 14px",
+      marginTop: 12
+    }}>
+      <div style={{ fontSize: "0.78rem", fontWeight: 800, color: "#92400e", marginBottom: 8 }}>
+        ✍️ {t(lang, "ज्ञापन/दस्तावेज़ हस्ताक्षरकर्ता (केवल एडमिन):", "Memo/Document Signatories (Admin Only):")}
       </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        {officers.map((o) => {
+          const active = ids.includes(o.id);
+          return (
+            <label
+              key={o.id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "4px 10px",
+                borderRadius: 20,
+                fontSize: "0.75rem",
+                fontWeight: 800,
+                cursor: "pointer",
+                background: active ? "#0b1a30" : "#ffffff",
+                color: active ? "#ffffff" : "#334155",
+                border: `1.5px solid ${active ? "#0b1a30" : "#cbd5e1"}`
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setIds((prev) => (e.target.checked ? [...prev, o.id] : prev.filter((x) => x !== o.id)))}
+                style={{ width: 13, height: 13 }}
+              />
+              <span>{o.nameHi} ({o.designationHi}) [अलग मुहर व साइन]</span>
+            </label>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary btn-sm"
+        disabled={saving}
+        onClick={saveSignatories}
+        style={{ fontSize: "0.76rem", padding: "5px 12px", fontWeight: 800 }}
+      >
+        💾 {saving ? t(lang, "सेव हो रहा है...", "Saving...") : t(lang, "हस्ताक्षर सेव करें", "Save Signatures")}
+      </button>
     </div>
   );
 }
@@ -5281,35 +7067,38 @@ function Payments({ state, saveSettings, run }) {
   const [editSigPayment, setEditSigPayment] = useState(null);
   const officers = s.signatories || [];
 
-  // Monthly membership fee configured by Level 1 Super Admin (default: ₹50)
-  const [monthlyFee, setMonthlyFee] = useState(Number(s.monthlyMembershipFee) || 50);
-  const [calcMonths, setCalcMonths] = useState(12);
+  const [entryFee, setEntryFee] = useState(s.entryFee !== undefined ? Number(s.entryFee) : 10);
+  const [monthlyFee, setMonthlyFee] = useState(s.monthlyMembershipFee !== undefined ? Number(s.monthlyMembershipFee) : 20);
+  const [validityMode, setValidityMode] = useState(s.validityMode || "calendar_year");
+  const [validityMonths, setValidityMonths] = useState(s.validityMonths !== undefined ? Number(s.validityMonths) : 12);
   const [savingFee, setSavingFee] = useState(false);
 
-  // Calendar year calculations
   const now = new Date();
-  const currentMonth = now.getMonth() + 1; // 1..12
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
   const remainingMonths = Math.max(1, 13 - currentMonth);
+  const calcMonthsPreview = validityMode === "months" ? Math.max(1, Number(validityMonths) || 12) : remainingMonths;
+  const totalPreview = Math.max(0, Number(entryFee) || 0) + Math.max(0, Number(monthlyFee) || 0) * calcMonthsPreview;
 
-  const monthNamesHi = ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"];
-  const currentMonthName = monthNamesHi[currentMonth - 1] || "";
-
-  async function handleSaveMonthlyFee(e) {
+  async function handleSaveFeeSettings(e) {
     e.preventDefault();
     setSavingFee(true);
-    const feeVal = Number(monthlyFee) || 50;
+    const payload = {
+      entryFee: Math.max(0, Number(entryFee) || 0),
+      monthlyMembershipFee: Math.max(0, Number(monthlyFee) || 0),
+      validityMode,
+      validityMonths: Math.max(1, Number(validityMonths) || 12)
+    };
+    const msg = t(
+      lang,
+      `सदस्यता शुल्क सेव हो गया! (प्रवेश ₹${payload.entryFee} + ₹${payload.monthlyMembershipFee}/माह)`,
+      `Membership fee saved! (Entry ₹${payload.entryFee} + ₹${payload.monthlyMembershipFee}/mo)`
+    );
     try {
       if (saveSettings) {
-        await saveSettings(
-          { monthlyMembershipFee: feeVal },
-          t(lang, `मासिक सदस्यता शुल्क ₹${feeVal}/माह सफलतापूर्वक सेव हो गया!`, `Monthly membership fee saved at ₹${feeVal}/month!`)
-        );
+        await saveSettings(payload, msg);
       } else {
-        await run(
-          "/api/settings",
-          { method: "PUT", body: { monthlyMembershipFee: feeVal } },
-          t(lang, `मासिक सदस्यता शुल्क ₹${feeVal}/माह सफलतापूर्वक सेव हो गया!`, `Monthly membership fee saved at ₹${feeVal}/month!`)
-        );
+        await run("/api/settings", { method: "PUT", body: payload }, msg);
       }
     } finally {
       setSavingFee(false);
@@ -5317,142 +7106,95 @@ function Payments({ state, saveSettings, run }) {
   }
 
   return (
-    <div style={{ display: "grid", gap: 24 }}>
-      {/* ── CARD 1: मासिक सदस्यता शुल्क एवं गणना (VARIABLE PER-MONTH MEMBERSHIP FEE) ── */}
-      <div className="card-panel" style={{ borderRadius: 16, padding: "26px 28px", borderTop: "4px solid var(--accent)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14, marginBottom: 20 }}>
-          <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#fef3c7", color: "#92400e", padding: "4px 10px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 800, marginBottom: 6 }}>
-              👑 {t(lang, "केवल Level 1 (सुपर एडमिन) नियंत्रण", "Level 1 Super Admin Exclusive")}
-            </div>
-            <h3 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1.25rem", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-              💳 {t(lang, "मासिक सदस्यता शुल्क एवं शुल्क गणना प्रणाली", "Monthly Membership Fee & Calculation System")}
-            </h3>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: "6px 0 0", maxWidth: 720 }}>
-              {t(
-                lang,
-                "Level 1 सुपर एडमिन यहाँ से प्रति माह सदस्यता शुल्क की दर (₹/माह) स्वतंत्र रूप से निर्धारित कर सकते हैं। यह दर स्वतः समस्त ऑनलाइन सदस्यता भुगतान, कैलेंडर-वर्ष गणना और रसीदों पर लागू होगी।",
-                "Level 1 Super Admin can configure the per-month membership fee rate (₹/month). This variable automatically governs all online join payments, calendar-year fee calculations, and digital receipts."
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* Setting Input & Save Form */}
-        <form onSubmit={handleSaveMonthlyFee} style={{ background: "#f8fafc", padding: "18px 22px", borderRadius: 12, border: "1.5px solid #e2e8f0", marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
-            <div style={{ flex: "1 1 240px", maxWidth: 360 }}>
-              <label className="about-form-label" style={{ fontWeight: 800, color: "#1e293b" }}>
-                💰 {t(lang, "प्रति माह सदस्यता शुल्क (₹ / Month)", "Per Month Membership Fee (₹ / Month)")} *
-              </label>
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontWeight: 800, color: "#64748b", fontSize: "1.1rem" }}>₹</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  className="form-control"
-                  style={{ paddingLeft: 30, fontSize: "1.15rem", fontWeight: 800, color: "var(--primary)" }}
-                  value={monthlyFee}
-                  onChange={(e) => setMonthlyFee(Math.max(1, Number(e.target.value) || 0))}
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={savingFee}
-              style={{ padding: "10px 24px", fontWeight: 800, borderRadius: 8, height: 44, display: "inline-flex", alignItems: "center", gap: 8 }}
-            >
-              {savingFee ? "⏳ सहेजा जा रहा है..." : `💾 ${t(lang, "शुल्क दर सहेजें", "Save Monthly Rate")}`}
-            </button>
-
-            {s.monthlyMembershipFee && (
-              <span style={{ color: "#16a34a", fontWeight: 700, fontSize: "0.85rem", paddingBottom: 10 }}>
-                ✓ {t(lang, `वर्तमान सक्रिय दर: ₹${s.monthlyMembershipFee}/माह`, `Current Active Rate: ₹${s.monthlyMembershipFee}/month`)}
-              </span>
-            )}
-          </div>
-        </form>
-
-        {/* Current Calendar-Year Registration Rate Box */}
-        <div style={{ background: "linear-gradient(135deg, #0b1a30 0%, #1e3a8a 100%)", color: "#ffffff", padding: "18px 22px", borderRadius: 12, marginBottom: 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
-            <div>
-              <div style={{ color: "#ffd166", fontWeight: 800, fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "1px" }}>
-                📅 {t(lang, "वर्तमान कैलेंडर वर्ष (31 दिसंबर तक वैधता)", "Current Calendar-Year Dynamic Fee (Expires Dec 31)")}
-              </div>
-              <div style={{ fontSize: "1.05rem", fontWeight: 700, marginTop: 4 }}>
-                {t(lang, `वर्तमान माह: ${currentMonthName} (${currentMonth}वां माह)`, `Current Month: ${currentMonthName} (Month ${currentMonth})`)} • {t(lang, `शेष माह: ${remainingMonths} माह`, `Remaining: ${remainingMonths} months`)}
-              </div>
-              <div style={{ fontSize: "0.84rem", color: "#cbd5e1", marginTop: 2 }}>
-                {t(lang, `गणना सूत्र: शेष माह (${remainingMonths}) × प्रति माह दर (₹${monthlyFee})`, `Formula: Remaining Months (${remainingMonths}) × Per-Month Rate (₹${monthlyFee})`)}
-              </div>
-            </div>
-            <div style={{ textAlign: "right", background: "rgba(255,255,255,0.12)", padding: "10px 18px", borderRadius: 10 }}>
-              <div style={{ fontSize: "0.8rem", color: "#ffd166", fontWeight: 700 }}>{t(lang, "नये सदस्य हेतु वर्तमान देय शुल्क", "Current Payable Fee for New Joinees")}</div>
-              <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#ffffff", lineHeight: 1.2 }}>
-                ₹{remainingMonths * monthlyFee}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Standard Multi-Month Breakdown Grid */}
-        <h4 style={{ color: "var(--primary)", fontWeight: 800, fontSize: "1rem", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
-          📊 {t(lang, "अवधि अनुसार सदस्यता शुल्क गणना तालिका", "Period-wise Membership Fee Breakdown")}
-        </h4>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 24 }}>
-          {[
-            { months: 1, labelHi: "1 माह (मासिक)", labelEn: "1 Month" },
-            { months: 3, labelHi: "3 माह (त्रैमासिक)", labelEn: "3 Months (Quarterly)" },
-            { months: 6, labelHi: "6 माह (अर्धवार्षिक)", labelEn: "6 Months (Half-Yearly)" },
-            { months: 12, labelHi: "12 माह (1 वर्ष - वार्षिक)", labelEn: "12 Months (1 Year)" },
-            { months: 24, labelHi: "24 माह (2 वर्ष)", labelEn: "24 Months (2 Years)" },
-            { months: 36, labelHi: "36 माह (3 वर्ष)", labelEn: "36 Months (3 Years)" }
-          ].map((item) => (
-            <div key={item.months} style={{ background: "#ffffff", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
-              <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#64748b" }}>{t(lang, item.labelHi, item.labelEn)}</div>
-              <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "var(--primary)", margin: "4px 0" }}>
-                ₹{item.months * monthlyFee}
-              </div>
-              <div style={{ fontSize: "0.74rem", color: "#94a3b8" }}>{item.months} × ₹{monthlyFee}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Interactive Custom Calculator */}
-        <div style={{ background: "#f0fdf4", border: "1.5px solid #bbf7d0", borderRadius: 12, padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
-            <div>
-              <div style={{ fontWeight: 800, color: "#166534", fontSize: "0.95rem" }}>
-                🧮 {t(lang, "त्वरित शुल्क गणक (Quick Custom Months Calculator)", "Quick Custom Months Calculator")}
-              </div>
-              <div style={{ fontSize: "0.82rem", color: "#15803d", marginTop: 2 }}>
-                {t(lang, "किसी भी कस्टम अवधि (माह) के लिए कुल शुल्क का आकलन करें:", "Estimate total fee for any custom number of months:")}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <label style={{ fontSize: "0.88rem", fontWeight: 700, color: "#166534" }}>{t(lang, "माह संख्या:", "Months:")}</label>
-              <input
-                type="number"
-                min="1"
-                max="120"
-                className="form-control"
-                style={{ width: 90, fontWeight: 800, textAlign: "center" }}
-                value={calcMonths}
-                onChange={(e) => setCalcMonths(Math.max(1, Number(e.target.value) || 1))}
-              />
-              <span style={{ fontSize: "1.2rem", fontWeight: 900, color: "#166534", marginLeft: 8 }}>
-                = ₹{calcMonths * monthlyFee}
-              </span>
-            </div>
-          </div>
-        </div>
+    <div style={{ display: "grid", gap: 20 }}>
+      {/* Header Banner matching Image 11 */}
+      <div className="card-panel" style={{ borderRadius: 16, padding: "20px 24px" }}>
+        <h3 style={{ color: "var(--primary)", fontWeight: 900, fontSize: "1.18rem", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>💰</span>
+          <span>{t(lang, "सदस्यता शुल्क (एक ही स्थान से नियंत्रण)", "Membership Fee (Single Control)")}</span>
+        </h3>
+        <p style={{ color: "#1e40af", fontSize: "0.86rem", margin: 0, lineHeight: 1.5 }}>
+          {t(
+            lang,
+            "यहाँ बदला गया शुल्क पूरी वेबसाइट (पंजीकरण फॉर्म, रसीद, लेजर) में तुरंत लागू होता है। जनवरी-दिसंबर कैलेंडर वर्ष के अनुसार बीच में जुड़ने पर बचे माहों का ही शुल्क लिया जाता है।",
+            "Fee changes here apply immediately across the entire website (Registration Form, Receipts, Ledger). Under Jan–Dec calendar year mode, mid-year joiners pay only for the remaining months."
+          )}
+        </p>
       </div>
+
+      {/* Fee Settings Form Card matching Image 11 */}
+      <form className="card-panel" onSubmit={handleSaveFeeSettings} style={{ borderRadius: 16, padding: "22px 26px" }}>
+        <div className="form-grid">
+          <Field label={t(lang, "प्रवेश शुल्क (₹)", "Entry Fee (₹)")}>
+            <Inp
+              type="number"
+              min="0"
+              value={entryFee}
+              onChange={(e) => setEntryFee(Math.max(0, Number(e.target.value) || 0))}
+              required
+            />
+          </Field>
+
+          <Field label={t(lang, "मासिक चन्दा (₹ प्रति माह)", "Monthly Subscription (₹ per month)")}>
+            <Inp
+              type="number"
+              min="0"
+              value={monthlyFee}
+              onChange={(e) => setMonthlyFee(Math.max(0, Number(e.target.value) || 0))}
+              required
+            />
+          </Field>
+
+          <Field label={t(lang, "वैधता विधि", "Validity Method")}>
+            <select
+              className="form-control"
+              value={validityMode}
+              onChange={(e) => setValidityMode(e.target.value)}
+            >
+              <option value="calendar_year">{t(lang, "कैलेंडर वर्ष — 31 दिसंबर तक", "Calendar Year — Till Dec 31")}</option>
+              <option value="months">{t(lang, "निश्चित माह (Fixed Months)", "Fixed Months")}</option>
+            </select>
+          </Field>
+
+          <Field label={t(lang, "वैधता माह (months मोड पर लागू)", "Validity Months (for months mode)")}>
+            <Inp
+              type="number"
+              min="1"
+              max="60"
+              value={validityMonths}
+              onChange={(e) => setValidityMonths(Math.max(1, Number(e.target.value) || 12))}
+            />
+          </Field>
+        </div>
+
+        <div style={{
+          background: "#f0fdf4",
+          border: "1.5px solid #bbf7d0",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginTop: 14,
+          marginBottom: 16,
+          fontSize: "0.86rem",
+          fontWeight: 800,
+          color: "#166534"
+        }}>
+          {validityMode === "calendar_year"
+            ? t(
+                lang,
+                `उदाहरण (आज ${currentMonth}/${currentYear}): प्रवेश ₹${entryFee} + ₹${monthlyFee} × ${remainingMonths} शेष माह = ₹${totalPreview}`,
+                `Example (Today ${currentMonth}/${currentYear}): Entry ₹${entryFee} + ₹${monthlyFee} × ${remainingMonths} remaining mo = ₹${totalPreview}`
+              )
+            : t(
+                lang,
+                `उदाहरण (${calcMonthsPreview} माह मोड): प्रवेश ₹${entryFee} + ₹${monthlyFee} × ${calcMonthsPreview} माह = ₹${totalPreview}`,
+                `Example (${calcMonthsPreview} months mode): Entry ₹${entryFee} + ₹${monthlyFee} × ${calcMonthsPreview} mo = ₹${totalPreview}`
+              )}
+        </div>
+
+        <button type="submit" className="btn btn-accent" disabled={savingFee} style={{ fontWeight: 900, padding: "10px 22px" }}>
+          {savingFee ? t(lang, "सेव हो रहा है...", "Saving...") : `💾 ${t(lang, "शुल्क सेव करें", "Save Fee Settings")}`}
+        </button>
+      </form>
 
       {/* ── CARD 2: समस्त शुल्क एवं सहयोग रसीद रजिस्टर (EXACT MATCH TO REFERENCE IMAGE) ── */}
       <div className="card-panel" style={{ borderRadius: 16, padding: "24px 28px" }}>
